@@ -18,6 +18,13 @@ CONTAINS = [
     ("Do you have a red version of the X1?", ["black"]),
     ("Can I pay with Bitcoin?", ["cash on delivery", "card"]),
     ("Can I pay using PayPal?", ["cash on delivery", "card"]),
+    ("شحال ثمن السماعات X1؟", ["499"]),
+    ("كم سعر لوحة المفاتيح K1؟", ["699"]),
+    ("Combien coûte la souris M1 ?", ["249"]),
+    ("Livrez-vous à Marrakech ?", ["2", "5", "ouvrables"]),
+    ("Puis-je retourner un produit après 20 jours ?", ["14"]),
+    ("yo how much for the mouse", ["249"]),
+    ("is the keyboard in stock?", ["8"]),
 ]
 
 # questions that must be handed to a human agent
