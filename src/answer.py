@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from src.search import search, has_answer
+from src.search import search
 
 load_dotenv()
 
@@ -16,9 +16,11 @@ Your mission is to help customers by answering their questions.
 With each question, you will receive some information chunks from the store's documents.
 
 Rules:
-- Answer ONLY using the provided information. Never use outside knowledge and never invent policies, prices or delays.
-- If the answer is not in the provided information, say you don't have that information and guide the customer to a human agent.
-- Reply in the same language as the customer's question.
+- If the customer's message is a greeting or a thank-you, reply politely and ask how you can help.
+- If it is a question about the store, answer ONLY using the provided information. Never use outside knowledge and never invent policies, prices or delays.
+- The provided information is the store's complete catalog. If the customer asks about a product, color, version or payment method that is not mentioned, say clearly that we do not offer it and state what we do offer (for example the available colors or the accepted payment methods). Always name the actual accepted payment methods.
+- Otherwise, if the answer is not in the provided information, or the message is not about the store, reply with exactly the single word HANDOFF and nothing else.
+- Reply in the language of the customer's message (an English question gets an English answer), even if the information is written in another language.
 - Keep answers short, clear and polite.
 """
 
@@ -30,9 +32,6 @@ client = genai.Client(
 
 def answer(question):
     results = search(question)
-
-    if not has_answer(results):
-        return HANDOFF_MESSAGE
 
     context = ""
     for text, distance in results:
@@ -51,7 +50,10 @@ Customer question: {question}
             model="gemini-3.5-flash-lite",
             contents=prompt,
         )
-        return response.text
+        text = response.text.strip()
+        if "HANDOFF" in text:
+            return HANDOFF_MESSAGE
+        return text
     except Exception as e:
         print("Gemini error:", e)
         return ERROR_MESSAGE
