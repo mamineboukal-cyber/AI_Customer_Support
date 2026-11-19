@@ -5,12 +5,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 FILES = [
-    ("Data/FAQ.md", "Frequently Asked Questions", "faq"),
-    ("Data/Shipping.md", "Shipping Policy", "shipping"),
-    ("Data/payments.md", "Payment Policy", "payment"),
-    ("Data/products.md", "Products", "products"),
-    ("Data/returns.md", "Returns Policy", "returns"),
-    ("Data/warranty.md", "Warranty Policy", "warranty"),
+    ("data/knowledge_base/FAQ.md", "Frequently Asked Questions", "faq"),
+    ("data/knowledge_base/shipping.md", "Shipping Policy", "shipping"),
+    ("data/knowledge_base/payments.md", "Payment Policy", "payment"),
+    ("data/knowledge_base/products.md", "Products", "products"),
+    ("data/knowledge_base/returns.md", "Returns Policy", "returns"),
+    ("data/knowledge_base/warranty.md", "Warranty Policy", "warranty"),
 ]
 
 conn = psycopg.connect(
