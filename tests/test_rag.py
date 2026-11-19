@@ -1,7 +1,7 @@
 import sys
 import time
 
-from src.answer import answer, HANDOFF_MESSAGE, ERROR_MESSAGE
+from app.rag.answer import answer, HANDOFF_MESSAGE, ERROR_MESSAGE
 
 # (question, words that must appear in the answer)
 CONTAINS = [

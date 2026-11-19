@@ -1,4 +1,4 @@
-from src.embedding import embedder, get_conn
+from app.embeddings.embedding import embedder, get_conn
 
 THRESHOLD = 0.38
 
