@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: moroccotech_ci
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    # Throwaway CI database, not secrets. No GEMINI_API_KEY on purpose:
+    # live tests are excluded by pytest.ini and must never run in CI.
+    env:
+      DATABASE_NAME: moroccotech_ci
+      DATABASE_USER: ci
+      DATABASE_PASSWORD: ci
+      DATABASE_HOST: localhost
+      DATABASE_PORT: 5432
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      # CPU torch first, otherwise sentence-transformers pulls the much larger CUDA build.
+      - name: Install dependencies
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-dev.txt
+
+      - name: Cache embedding model
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-hf-bge-small-en-v1.5
+
+      - name: Load schema
+        env:
+          PGPASSWORD: ci
+        run: psql -h localhost -U ci -d moroccotech_ci -v ON_ERROR_STOP=1 -f sql/schema.sql
+
+      - name: Build knowledge base
+        run: |
+          python -m app.ingestion.ingest_documents
+          python -m app.ingestion.chunk_documents
+          python -m app.embeddings.embedding
+
+      - name: Run tests
+        run: pytest -v

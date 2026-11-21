@@ -1,7 +1,9 @@
-import sys
+"""End-to-end eval against Gemini. Run with: pytest -m live (about 2 minutes)."""
 import time
 
-from app.rag.answer import answer, HANDOFF_MESSAGE, ERROR_MESSAGE
+import pytest
+
+pytestmark = pytest.mark.live
 
 # (question, words that must appear in the answer)
 CONTAINS = [
@@ -35,33 +37,33 @@ HANDOFF = [
     "Can you repair my iPhone?",
 ]
 
-passed, failed, errors = 0, 0, 0
+
+@pytest.fixture(scope="module")
+def rag():
+    # Imported here, not at module level: importing app.rag.answer creates the
+    # Gemini client and loads the embedding model, which must not happen when
+    # live tests are only collected and deselected (e.g. in CI with no key).
+    import app.rag.answer
+
+    return app.rag.answer
 
 
-def check(question, ok_fn, expected):
-    global passed, failed, errors
-    reply = answer(question)
+def ask(rag, question):
+    reply = rag.answer(question)
     time.sleep(5)  # stay under the free-tier limit of 15 requests per minute
-    if reply == ERROR_MESSAGE:
-        errors += 1
-        print("ERROR", "|", question)
-        print("      got:     ", reply)
-    elif ok_fn(reply):
-        passed += 1
-        print("PASS ", "|", question)
-        print("      got:     ", reply)
-    else:
-        failed += 1
-        print("FAIL ", "|", question)
-        print("      expected:", expected)
-        print("      got:     ", reply)
+    if reply == rag.ERROR_MESSAGE:
+        # The old script counted Gemini errors separately and did not fail on them.
+        pytest.skip("Gemini error")
+    return reply
 
 
-for question, words in CONTAINS:
-    check(question, lambda r, w=words: all(x in r.lower() for x in w), f"contains {words}")
+@pytest.mark.parametrize("question,words", CONTAINS, ids=[q for q, _ in CONTAINS])
+def test_answer_contains(rag, question, words):
+    reply = ask(rag, question)
+    assert all(w in reply.lower() for w in words), f"expected {words}, got: {reply}"
 
-for question in HANDOFF:
-    check(question, lambda r: r == HANDOFF_MESSAGE, "handoff message")
 
-print(f"\npassed={passed} failed={failed} errors={errors}")
-sys.exit(1 if failed else 0)
+@pytest.mark.parametrize("question", HANDOFF)
+def test_handoff(rag, question):
+    reply = ask(rag, question)
+    assert reply == rag.HANDOFF_MESSAGE, f"got: {reply}"
