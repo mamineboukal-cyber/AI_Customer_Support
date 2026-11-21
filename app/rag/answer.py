@@ -126,11 +126,7 @@ def answer(question, history=None):
 
     try:
         for _ in range(MAX_TURNS):
-            response = get_client().models.generate_content(
-                model=MODEL,
-                contents=contents,
-                config=config,
-            )
+            response = _generate(contents)
 
             calls = response.function_calls
             if not calls:
