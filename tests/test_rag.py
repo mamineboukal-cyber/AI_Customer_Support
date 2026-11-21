@@ -21,7 +21,7 @@ CONTAINS = [
     ("Can I pay with Bitcoin?", ["cash on delivery", "card"]),
     ("Can I pay using PayPal?", ["cash on delivery", "card"]),
     ("شحال ثمن السماعات X1؟", ["499"]),
-    ("كم سعر لوحة المفاتيح K1؟", ["699"]),
+    ("ch7al kaydir keyboard K1?", ["699"]),
     ("Combien coûte la souris M1 ?", ["249"]),
     ("Livrez-vous à Marrakech ?", ["2", "5", "ouvrables"]),
     ("Puis-je retourner un produit après 20 jours ?", ["14"]),
@@ -29,7 +29,7 @@ CONTAINS = [
     ("is the keyboard in stock?", ["8"]),
 ]
 
-# questions that must be handed to a human agent
+
 HANDOFF = [
     "Do you have a physical store in Dubai?",
     "Do you offer a 50% student discount?",
@@ -50,7 +50,8 @@ def rag():
 
 def ask(rag, question):
     reply = rag.answer(question)
-    time.sleep(5)  # stay under the free-tier limit of 15 requests per minute
+    time.sleep(10)  # stay under the free-tier limit of 15 requests per minute
+    print(f"\n  Q: {question}\n  A: {reply}")
     if reply == rag.ERROR_MESSAGE:
         # The old script counted Gemini errors separately and did not fail on them.
         pytest.skip("Gemini error")
