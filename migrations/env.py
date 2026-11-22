@@ -18,7 +18,10 @@ from sqlalchemy import URL, create_engine, pool
 load_dotenv()
 
 config = context.config
-if config.config_file_name is not None:
+# A caller (the test suite) can hand over its own connection through
+# config.attributes["connection"]; then logging is left alone and .env is not used.
+external_connection = config.attributes.get("connection")
+if config.config_file_name is not None and external_connection is None:
     fileConfig(config.config_file_name)
 
 target_metadata = None
@@ -49,6 +52,11 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
+    if external_connection is not None:
+        context.configure(connection=external_connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
     engine = create_engine(database_url(), poolclass=pool.NullPool)
     with engine.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)

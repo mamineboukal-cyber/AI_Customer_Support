@@ -1,11 +1,7 @@
-"""Schema checks for the Alembic migrations. Needs the DB upgraded with `alembic upgrade head`."""
-import os
-
+"""Schema checks: run against the throwaway test DB that conftest.py builds from empty
+with `alembic upgrade head`, so every run also proves the migrations work from scratch."""
 import psycopg
 import pytest
-from dotenv import load_dotenv
-
-load_dotenv()
 
 TABLES = {
     "alembic_version",
@@ -18,19 +14,10 @@ TABLES = {
 
 
 @pytest.fixture
-def conn():
-    # Plain connection, not get_conn(): register_vector() fails when the extension is missing,
-    # and these tests must report that as an assertion, not crash.
-    conn = psycopg.connect(
-        dbname=os.getenv("DATABASE_NAME"),
-        user=os.getenv("DATABASE_USER"),
-        password=os.getenv("DATABASE_PASSWORD"),
-        host=os.getenv("DATABASE_HOST"),
-        port=int(os.getenv("DATABASE_PORT")),
-    )
-    yield conn
-    conn.rollback()
-    conn.close()
+def conn(raw_conn):
+    # Not get_conn(): register_vector() fails when the extension is missing, and these
+    # tests must report that as an assertion, not crash. Everything is rolled back.
+    return raw_conn
 
 
 def _insert_document(conn, source_name, content_hash):
@@ -68,3 +55,8 @@ def test_documents_source_name_unique(conn):
 def test_documents_content_hash_not_null(conn):
     with pytest.raises(psycopg.errors.NotNullViolation):
         _insert_document(conn, "_test_nohash.md", None)
+
+
+def test_documents_source_name_must_be_lowercase(conn):
+    with pytest.raises(psycopg.errors.CheckViolation):
+        _insert_document(conn, "Mixed.md", "a" * 64)
