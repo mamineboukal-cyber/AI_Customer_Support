@@ -1,0 +1,25 @@
+# Local Postgres + pgvector for MoroccoTech.
+# Credentials and the host port come from .env (see .env.example); nothing secret lives here.
+name: moroccotech
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: moroccotech_pg
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:?set DATABASE_NAME in .env}
+      POSTGRES_USER: ${DATABASE_USER:?set DATABASE_USER in .env}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?set DATABASE_PASSWORD in .env}
+    ports:
+      - "${DATABASE_PORT:-5435}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -11,3 +11,9 @@ __pycache__/
 venv/
 logs/
 db/backups/*.dump
+
+# ingestion folders: contents are local, only the .gitkeep is tracked
+data/inbox/*
+!data/inbox/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
