@@ -10,10 +10,22 @@ class EmptyDocument(ValueError):
     pass
 
 
+class NotUtf8(ValueError):
+    pass
+
+
 def _read_utf8(path: Path) -> str:
     # utf-8-sig drops a BOM (Notepad adds one); text mode turns \r\n into \n,
     # so re-saving a file with Windows line endings does not change its hash.
-    return path.read_text(encoding="utf-8-sig")
+    # No fallback encoding on purpose: cp1252 decodes almost any bytes, so an Arabic
+    # Windows-1256 file would be silently turned into garbage instead of rejected.
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError as e:
+        raise NotUtf8(
+            f"not valid UTF-8 (byte {e.object[e.start]:#04x} at position {e.start}): "
+            "save the file as UTF-8"
+        ) from None
 
 
 LOADERS = {
