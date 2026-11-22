@@ -69,19 +69,19 @@ def _rows_at_0003(conn, migrate, names):
         _insert_document(conn, name, "a" * 64)
 
 
-# db2 is autocommit: an open transaction here would hold a lock on documents and
-# block the migrate fixture's cleanup (fixtures are torn down in reverse order).
-def test_0004_strips_extension_from_existing_rows(db2, migrate):
-    _rows_at_0003(db2, migrate, ["shipping.md", "price.list.v2.txt", "noext"])
+# db: autocommit (an open transaction would hold a lock on documents and block the
+# migrate fixture's cleanup) and starts from empty tables (other tests leave rows).
+def test_0004_strips_extension_from_existing_rows(db, migrate):
+    _rows_at_0003(db, migrate, ["shipping.md", "price.list.v2.txt", "noext"])
 
     migrate(command.upgrade, "head")
 
-    rows = db2.execute("SELECT source_name FROM documents ORDER BY source_name").fetchall()
+    rows = db.execute("SELECT source_name FROM documents ORDER BY source_name").fetchall()
     assert [r[0] for r in rows] == ["noext", "price.list.v2", "shipping"]
 
 
-def test_0004_refuses_rows_that_would_merge(db2, migrate):
-    _rows_at_0003(db2, migrate, ["shipping.md", "shipping.txt"])
+def test_0004_refuses_rows_that_would_merge(db, migrate):
+    _rows_at_0003(db, migrate, ["shipping.md", "shipping.txt"])
 
     with pytest.raises(Exception, match="shipping.md, shipping.txt"):
         migrate(command.upgrade, "head")
