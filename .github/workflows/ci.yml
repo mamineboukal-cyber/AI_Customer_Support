@@ -58,16 +58,20 @@ jobs:
           path: ~/.cache/huggingface
           key: ${{ runner.os }}-hf-bge-small-en-v1.5
 
-      - name: Load schema
-        env:
-          PGPASSWORD: ci
-        run: psql -h localhost -U ci -d moroccotech_ci -v ON_ERROR_STOP=1 -f sql/schema.sql
-
-      - name: Build knowledge base
+      # The schema comes only from the Alembic migrations. The round trip proves every
+      # downgrade works too, then the DB is rebuilt at head for the tests.
+      - name: Create schema (Alembic)
         run: |
-          python -m app.ingestion.ingest_documents
-          python -m app.ingestion.chunk_documents
-          python -m app.embeddings.embedding
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+          alembic current
 
+      # Seed documents are tracked in git: --keep ingests them without moving them.
+      - name: Ingest seed documents
+        run: python -m app.ingestion.ingest_folder data/knowledge_base --keep
+
+      # pytest.ini adds -m "not live": the Gemini tests never run here.
+      # The ci user is the service's superuser, so conftest.py may create its throwaway test DB.
       - name: Run tests
         run: pytest -v
