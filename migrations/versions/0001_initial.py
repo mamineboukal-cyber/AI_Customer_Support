@@ -1,4 +1,4 @@
-"""initial schema, recreated from sql/schema.sql
+"""initial schema, recreated from the pre-Alembic sql/schema.sql dump (see git history)
 
 Revision ID: 0001_initial
 Revises:

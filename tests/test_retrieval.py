@@ -1,4 +1,5 @@
-"""Retrieval checks with no Gemini call. Needs the DB built by the ingestion pipeline."""
+"""Retrieval checks with no Gemini call. Needs the real DB migrated (alembic upgrade head)
+and seeded (python -m app.ingestion.ingest_folder data/knowledge_base --keep)."""
 import pytest
 
 from app.embeddings.embedding import get_conn
@@ -26,7 +27,7 @@ def test_knowledge_base_is_embedded():
         "SELECT count(*), count(*) FILTER (WHERE embedding IS NULL) FROM document_chunks"
     ).fetchone()
     conn.close()
-    assert total > 0, "document_chunks is empty: run the ingestion pipeline"
+    assert total > 0, "document_chunks is empty: run python -m app.ingestion.ingest_folder data/knowledge_base --keep"
     assert missing == 0, f"{missing} chunks have no embedding: run app.embeddings.embedding"
 
 
