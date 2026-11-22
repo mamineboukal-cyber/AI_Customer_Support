@@ -40,9 +40,6 @@ HANDOFF = [
 
 @pytest.fixture(scope="module")
 def rag():
-    # Imported here, not at module level: importing app.rag.answer creates the
-    # Gemini client and loads the embedding model, which must not happen when
-    # live tests are only collected and deselected (e.g. in CI with no key).
     import app.rag.answer
 
     return app.rag.answer
@@ -53,7 +50,6 @@ def ask(rag, question):
     time.sleep(10)  # stay under the free-tier limit of 15 requests per minute
     print(f"\n  Q: {question}\n  A: {reply}")
     if reply == rag.ERROR_MESSAGE:
-        # The old script counted Gemini errors separately and did not fail on them.
         pytest.skip("Gemini error")
     return reply
 
