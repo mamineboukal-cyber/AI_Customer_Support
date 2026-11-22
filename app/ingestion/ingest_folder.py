@@ -28,12 +28,13 @@ class FileResult:
     error: str | None = None
 
 
-def find_case_collisions(names: list[str]) -> dict[str, str]:
-    """Map each name to the earlier name it equals ignoring case (both would be one document)."""
+def find_document_collisions(names: list[str]) -> dict[str, str]:
+    """Map each file name to the earlier one that is the same document
+    (same name without extension, ignoring case: Shipping.md / shipping.txt)."""
     first_by_key = {}
     collisions = {}
     for name in names:
-        key = name.lower()
+        key = Path(name).stem.lower()
         if key in first_by_key:
             collisions[name] = first_by_key[key]
         else:
@@ -52,13 +53,13 @@ def _files(folder: Path) -> list[Path]:
 def ingest_folder(folder: Path, processed: Path | None, conn, category: str = "general") -> list[FileResult]:
     """processed=None keeps every file in place (used for the seed folder)."""
     files = _files(folder)
-    collisions = find_case_collisions([p.name for p in files])
+    collisions = find_document_collisions([p.name for p in files])
     results = []
 
     for path in files:
         if path.name in collisions:
             results.append(
-                FileResult(path, "failed", error=f"case-collides with {collisions[path.name]} in this batch")
+                FileResult(path, "failed", error=f"same document as {collisions[path.name]} in this batch")
             )
             continue
         try:

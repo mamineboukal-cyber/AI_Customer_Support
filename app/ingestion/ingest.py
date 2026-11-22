@@ -29,7 +29,9 @@ def ingest_file(
     # Read and validate before touching the database: an unsupported or empty
     # file never reaches it.
     text = load_text(path)
-    source_name = path.name.lower()  # case-insensitive identity (CHECK in migration 0003)
+    # Identity = lowercased name without extension: Shipping.md, shipping.txt and later
+    # shipping.pdf are one document (lowercase CHECK in 0003, stems since 0004).
+    source_name = path.stem.lower()
     title = path.stem[:TITLE_MAX]
     content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
 

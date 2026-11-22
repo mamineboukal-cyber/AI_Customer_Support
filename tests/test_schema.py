@@ -2,6 +2,7 @@
 with `alembic upgrade head`, so every run also proves the migrations work from scratch."""
 import psycopg
 import pytest
+from alembic import command
 
 TABLES = {
     "alembic_version",
@@ -60,3 +61,27 @@ def test_documents_content_hash_not_null(conn):
 def test_documents_source_name_must_be_lowercase(conn):
     with pytest.raises(psycopg.errors.CheckViolation):
         _insert_document(conn, "Mixed.md", "a" * 64)
+
+
+def _rows_at_0003(conn, migrate, names):
+    migrate(command.downgrade, "0003_source_name_lowercase")
+    for name in names:
+        _insert_document(conn, name, "a" * 64)
+
+
+# db2 is autocommit: an open transaction here would hold a lock on documents and
+# block the migrate fixture's cleanup (fixtures are torn down in reverse order).
+def test_0004_strips_extension_from_existing_rows(db2, migrate):
+    _rows_at_0003(db2, migrate, ["shipping.md", "price.list.v2.txt", "noext"])
+
+    migrate(command.upgrade, "head")
+
+    rows = db2.execute("SELECT source_name FROM documents ORDER BY source_name").fetchall()
+    assert [r[0] for r in rows] == ["noext", "price.list.v2", "shipping"]
+
+
+def test_0004_refuses_rows_that_would_merge(db2, migrate):
+    _rows_at_0003(db2, migrate, ["shipping.md", "shipping.txt"])
+
+    with pytest.raises(Exception, match="shipping.md, shipping.txt"):
+        migrate(command.upgrade, "head")

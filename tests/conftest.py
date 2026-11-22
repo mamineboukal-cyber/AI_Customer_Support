@@ -36,13 +36,8 @@ def _admin(sql):
         conn.execute(sql)
 
 
-@pytest.fixture(scope="session")
-def test_db():
-    """Name of a freshly migrated, empty database; dropped after the session."""
-    assert TEST_DB != os.getenv("DATABASE_NAME"), "test DB must not be the real DB"
-    _admin(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)")
-    _admin(f"CREATE DATABASE {TEST_DB}")
-
+def _run_alembic(fn, revision):
+    """Run an Alembic command (command.upgrade / command.downgrade) on the test DB."""
     p = _params(TEST_DB)
     url = URL.create(
         "postgresql+psycopg",
@@ -54,10 +49,32 @@ def test_db():
     )
     engine = create_engine(url, poolclass=pool.NullPool)
     cfg = Config(str(ALEMBIC_INI))
-    with engine.begin() as connection:
-        cfg.attributes["connection"] = connection
-        command.upgrade(cfg, "head")
-    engine.dispose()
+    try:
+        with engine.begin() as connection:
+            cfg.attributes["connection"] = connection
+            fn(cfg, revision)
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture
+def migrate(test_db):
+    """migrate(command.downgrade, "0003_...") etc. Afterwards the documents are removed
+    (first: rows left at an old revision may block the upgrade) and the DB is back at head."""
+    yield _run_alembic
+    with psycopg.connect(**_params(test_db), autocommit=True) as conn:
+        conn.execute("TRUNCATE documents, document_chunks")
+    _run_alembic(command.upgrade, "head")
+
+
+@pytest.fixture(scope="session")
+def test_db():
+    """Name of a freshly migrated, empty database; dropped after the session."""
+    assert TEST_DB != os.getenv("DATABASE_NAME"), "test DB must not be the real DB"
+    _admin(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)")
+    _admin(f"CREATE DATABASE {TEST_DB}")
+
+    _run_alembic(command.upgrade, "head")
 
     yield TEST_DB
     _admin(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)")

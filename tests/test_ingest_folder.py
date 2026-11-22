@@ -4,7 +4,7 @@ import pytest
 
 import app.ingestion.ingest as ingest
 import app.ingestion.ingest_folder as ingest_folder_module
-from app.ingestion.ingest_folder import find_case_collisions, ingest_folder, main
+from app.ingestion.ingest_folder import find_document_collisions, ingest_folder, main
 
 V1 = "Wireless Headphones X1\nPrice: 499 MAD"
 OTHER = "Mechanical Keyboard K1\nPrice: 699 MAD"
@@ -50,7 +50,7 @@ def test_success_moves_file_after_commit(inbox, processed, db, db2):
     ]
     assert not (inbox / "x1.md").exists()
     assert (processed / "x1.md").read_text(encoding="utf-8") == V1
-    assert has_document(db2, "x1.md")
+    assert has_document(db2, "x1")
 
 
 # Case 2 at folder level: a skipped file is done, so it is moved too
@@ -88,11 +88,11 @@ def test_failure_halfway_stays_in_inbox_and_others_continue(
     assert "RuntimeError" in broken.error and "embedding model crashed" in broken.error
     assert (inbox / "b_broken.md").exists()
     assert not (processed / "b_broken.md").exists()
-    assert not has_document(db2, "b_broken.md")
+    assert not has_document(db2, "b_broken")
     assert db2.execute("SELECT count(*) FROM documents").fetchone()[0] == 2
     for name in ("a_good.md", "c_good.md"):
         assert (results[name].status, results[name].moved) == ("created", True)
-        assert has_document(db2, name)
+        assert has_document(db2, name.removesuffix(".md"))
 
 
 # Case 4 at folder level (plus unsupported types)
@@ -122,7 +122,7 @@ def test_keep_does_not_move(inbox, db, db2):
 
     assert (result.status, result.moved) == ("created", False)
     assert (inbox / "x1.md").exists()
-    assert has_document(db2, "x1.md")
+    assert has_document(db2, "x1")
 
 
 def test_ignores_gitkeep_hidden_files_and_folders(inbox, processed, db):
@@ -155,16 +155,16 @@ def test_move_failure_is_reported_after_commit(inbox, tmp_path, db, db2):
     assert (result.status, result.moved) == ("created", False)
     assert result.error.startswith("ingested but not moved")
     assert (inbox / "x1.md").exists()
-    assert has_document(db2, "x1.md")
+    assert has_document(db2, "x1")
 
 
 # Case 5: names that differ only by case
-def test_find_case_collisions():
-    names = ["FAQ.md", "Shipping.md", "faq.md", "shipping.md", "SHIPPING.md", "x1.md"]
+def test_find_document_collisions():
+    names = ["FAQ.md", "Shipping.md", "faq.md", "shipping.txt", "SHIPPING.md", "x1.md", "x1.v2.md"]
 
-    assert find_case_collisions(names) == {
+    assert find_document_collisions(names) == {
         "faq.md": "FAQ.md",
-        "shipping.md": "Shipping.md",
+        "shipping.txt": "Shipping.md",
         "SHIPPING.md": "Shipping.md",
     }
 
@@ -179,9 +179,9 @@ def test_case_collision_in_same_batch_keeps_second_file(inbox, processed, db, db
 
     assert results["Shipping.md"].status == "created"
     assert results["shipping.md"].status == "failed"
-    assert "case-collides with Shipping.md" in results["shipping.md"].error
+    assert "same document as Shipping.md" in results["shipping.md"].error
     assert (inbox / "shipping.md").exists()
-    content = db2.execute("SELECT content FROM documents WHERE source_name = 'shipping.md'")
+    content = db2.execute("SELECT content FROM documents WHERE source_name = 'shipping'")
     assert content.fetchone()[0] == V1
 
 
@@ -217,7 +217,21 @@ def test_case_collision_branch_on_any_filesystem(tmp_path, processed, db, db2, m
 
     assert results["Shipping.md"].status == "created"
     assert results["shipping.md"].status == "failed"
-    assert "case-collides with Shipping.md" in results["shipping.md"].error
+    assert "same document as Shipping.md" in results["shipping.md"].error
     assert (tmp_path / "b" / "shipping.md").exists()
-    content = db2.execute("SELECT content FROM documents WHERE source_name = 'shipping.md'")
+    content = db2.execute("SELECT content FROM documents WHERE source_name = 'shipping'")
+    assert content.fetchone()[0] == V1
+
+
+def test_same_stem_different_extension_in_same_batch(inbox, processed, db, db2):
+    put(inbox, "shipping.md", V1)
+    put(inbox, "shipping.txt", OTHER)
+
+    results = by_name(ingest_folder(inbox, processed, db))
+
+    assert results["shipping.md"].status == "created"
+    assert results["shipping.txt"].status == "failed"
+    assert "same document as shipping.md in this batch" in results["shipping.txt"].error
+    assert (inbox / "shipping.txt").exists()
+    content = db2.execute("SELECT content FROM documents WHERE source_name = 'shipping'")
     assert content.fetchone()[0] == V1
