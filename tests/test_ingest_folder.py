@@ -235,3 +235,21 @@ def test_same_stem_different_extension_in_same_batch(inbox, processed, db, db2):
     assert (inbox / "shipping.txt").exists()
     content = db2.execute("SELECT content FROM documents WHERE source_name = 'shipping'")
     assert content.fetchone()[0] == V1
+
+
+def test_folder_derives_categories_unless_given(inbox, db, db2):
+    put(inbox, "FAQ.md", V1)
+    put(inbox, "payments.md", OTHER)
+
+    ingest_folder(inbox, None, db)
+
+    rows = db2.execute("SELECT source_name, category FROM documents ORDER BY 1").fetchall()
+    assert rows == [("faq", "faq"), ("payments", "payment")]
+
+
+def test_main_category_option_overrides(inbox, processed, db, db2):
+    put(inbox, "FAQ.md", V1)
+
+    assert main([str(inbox), "--keep", "--category", "promo"], conn=db) == 0
+
+    assert db2.execute("SELECT category FROM documents").fetchone()[0] == "promo"

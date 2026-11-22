@@ -5,7 +5,7 @@ import hashlib
 import pytest
 
 import app.ingestion.ingest as ingest
-from app.ingestion.ingest import ingest_file
+from app.ingestion.ingest import category_for, ingest_file
 from app.ingestion.loaders import EmptyDocument
 
 V1 = "Wireless Headphones X1\nPrice: 499 MAD\nStock: 12\nColors: black"
@@ -26,7 +26,8 @@ def write(folder, name, text):
 
 def document(conn, source_name):
     return conn.execute(
-        "SELECT id, title, content, content_hash, updated_at FROM documents WHERE source_name = %s",
+        "SELECT id, title, content, content_hash, updated_at, category FROM documents "
+        "WHERE source_name = %s",
         (source_name,),
     ).fetchone()
 
@@ -184,10 +185,14 @@ def test_case_variant_name_updates_same_document(tmp_path, db, db2):
     assert doc[3] == sha(V2)
 
 
-def test_case_variant_with_same_content_is_skipped(tmp_path, db):
+def test_case_variant_with_same_content_only_updates_title(tmp_path, db, db2):
     ingest_file(write(tmp_path / "first", "shipping.md", V1), db)
+    ids = chunk_ids(db2, "shipping")
 
-    assert ingest_file(write(tmp_path / "second", "SHIPPING.md", V1), db) == "skipped"
+    assert ingest_file(write(tmp_path / "second", "SHIPPING.md", V1), db) == "updated"
+
+    assert document(db2, "shipping")[1] == "SHIPPING"
+    assert chunk_ids(db2, "shipping") == ids
 
 
 def test_long_file_name_title_is_cut_to_50(tmp_path, db, db2):
@@ -212,3 +217,50 @@ def test_other_extension_updates_same_document(tmp_path, db, db2):
     assert count_documents(db2) == 1
     assert document(db2, "shipping")[0] == doc_id
     assert document(db2, "shipping")[3] == sha(V2)
+
+
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        ("FAQ", "faq"),
+        ("payments", "payment"),
+        ("products", "products"),
+        ("returns", "returns"),
+        ("shipping", "shipping"),
+        ("warranty", "warranty"),
+        ("summer_delivery_update", "shipping"),
+        ("Return-Policy", "returns"),
+        ("x1_spec", "general"),
+        ("returning_customers", "general"),
+        ("productivity", "general"),
+    ],
+)
+def test_category_for(stem, expected):
+    assert category_for(stem) == expected
+
+
+def test_new_document_gets_category_from_file_name(tmp_path, db, db2):
+    ingest_file(write(tmp_path, "warranty.md", V1), db)
+
+    assert document(db2, "warranty")[5] == "warranty"
+
+
+def test_explicit_category_overrides(tmp_path, db, db2):
+    ingest_file(write(tmp_path, "warranty.md", V1), db, category="promo")
+
+    assert document(db2, "warranty")[5] == "promo"
+
+
+def test_category_change_updates_row_without_rechunking(tmp_path, db, db2):
+    path = write(tmp_path, "shipping.md", V1)
+    ingest_file(path, db, category="general")
+    before = document(db2, "shipping")
+    ids = chunk_ids(db2, "shipping")
+
+    assert ingest_file(path, db) == "updated"
+
+    after = document(db2, "shipping")
+    assert after[5] == "shipping"
+    assert after[0] == before[0] and after[3] == before[3]
+    assert after[4] > before[4]  # updated_at moved: the row was written
+    assert chunk_ids(db2, "shipping") == ids  # nothing re-chunked or re-embedded

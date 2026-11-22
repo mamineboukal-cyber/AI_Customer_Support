@@ -50,7 +50,9 @@ def _files(folder: Path) -> list[Path]:
     )
 
 
-def ingest_folder(folder: Path, processed: Path | None, conn, category: str = "general") -> list[FileResult]:
+def ingest_folder(
+    folder: Path, processed: Path | None, conn, category: str | None = None
+) -> list[FileResult]:
     """processed=None keeps every file in place (used for the seed folder)."""
     files = _files(folder)
     collisions = find_document_collisions([p.name for p in files])
@@ -103,7 +105,8 @@ def main(argv=None, conn=None) -> int:
                         help="where ingested files are moved (default: data/processed)")
     parser.add_argument("--keep", action="store_true",
                         help="do not move files (for the tracked seed folder)")
-    parser.add_argument("--category", default="general")
+    parser.add_argument("--category", default=None,
+                        help="force this category (default: derived from each file name)")
     args = parser.parse_args(argv)
 
     if not args.folder.is_dir():
