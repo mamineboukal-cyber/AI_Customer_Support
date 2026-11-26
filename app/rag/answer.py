@@ -138,13 +138,15 @@ def _run_search(query):
     return "\n\n".join(text for text, distance in results) or "No results found."
 
 
-def _generate(contents):
+def _generate(contents, generate_config=None):
+    """One Gemini call with retries on 503/504. `generate_config` defaults to the
+    support agent's config (system prompt and tools)."""
     for attempt in range(MAX_ATTEMPTS):
         try:
             return get_client().models.generate_content(
                 model=MODEL,
                 contents=contents,
-                config=config,
+                config=generate_config or config,
             )
         except errors.APIError as e:
             last_attempt = attempt == MAX_ATTEMPTS - 1
