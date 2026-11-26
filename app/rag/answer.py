@@ -19,7 +19,7 @@ RETRY_CODES = (503, 504)
 MAX_ATTEMPTS = 3
 RETRY_WAIT = (2, 4)
 MODEL = "gemini-3.5-flash-lite"
-MAX_TURNS = 4
+MAX_TURNS = 6
 HISTORY_LIMIT = 6
 
 SYSTEM_PROMPT = """You are a customer support employee for MoroccoTech, an electronics store in Morocco.
@@ -187,8 +187,9 @@ def respond(question, history=None):
                 reply = (response.text or "").strip()
                 if not reply or "HANDOFF" in reply:
                     return HANDOFF
-                # heuristic: a reply with numbers but no search is probably invented
-                if not searched and any(ch.isdigit() for ch in reply):
+                # heuristic: a reply with numbers but no search is probably invented;
+                # not after an inquiry, where it is a promise ("within 24 hours")
+                if not searched and topic is None and any(ch.isdigit() for ch in reply):
                     return HANDOFF
                 return AnswerResult(reply, topic)
 

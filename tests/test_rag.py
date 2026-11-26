@@ -41,10 +41,13 @@ INQUIRY = [
     "Do you offer a 50% student discount?",
     "Do you have a loyalty program?",
     "Does the Wireless Headphones X1 have noise cancelling?",
+    "Can you repair my iPhone?",  # a service category the documents do not record
 ]
 
+# Angry complaint or off-topic: hand off to a human.
 HANDOFF = [
-    "Can you repair my iPhone?",
+    "my delivery is late, this is unacceptable, I want my money back",
+    "i love you",
 ]
 
 

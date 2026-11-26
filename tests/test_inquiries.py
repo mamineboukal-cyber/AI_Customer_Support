@@ -283,3 +283,40 @@ def test_ignored_row_is_untouched_no_inquiry_and_no_promise(memory_db, model):
     assert reply == rag.HANDOFF_MESSAGE
     assert _snapshot(memory_db) == before
     assert waiting(memory_db) == []
+
+
+# --- the digits heuristic does not apply after an inquiry ----------------------------
+
+def test_promise_with_digits_after_inquiry_without_search_is_kept(memory_db, model):
+    promise = "We will check and come back within 24 hours."
+    model([call("raise_admin_inquiry", topic="loyalty program")], promise)
+
+    reply, session_id = rag.chat("Do you have a loyalty program?")
+
+    assert reply == promise
+    assert ledger(memory_db) == [("loyalty program", "loyalty program", 1, "pending")]
+    assert [(c, s) for _, c, s, *_ in waiting(memory_db)] == [
+        (conversation_id(session_id), "waiting")
+    ]
+
+
+def test_digits_without_search_or_inquiry_are_still_a_handoff(model):
+    model("The X1 costs 499 MAD.")
+
+    assert rag.respond("How much is the X1?") == rag.HANDOFF
+
+
+# --- tool-turn limit ------------------------------------------------------------------
+
+def test_five_tool_turns_then_a_reply_is_answered(model):
+    searches = [[call("search_documents", query=f"q{i}")] for i in range(5)]
+    model(*searches, "The X1 costs 499 MAD.")
+
+    assert rag.respond("...") == rag.AnswerResult("The X1 costs 499 MAD.", None)
+
+
+def test_six_tool_turns_without_a_reply_is_a_handoff(model):
+    searches = [[call("search_documents", query=f"q{i}")] for i in range(6)]
+    model(*searches, "never reached")
+
+    assert rag.respond("...") == rag.HANDOFF
