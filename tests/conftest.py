@@ -110,3 +110,18 @@ def db2(test_db):
     conn = _connect(test_db)
     yield conn
     conn.close()
+
+@pytest.fixture
+def memory_db(db, test_db, monkeypatch):
+    """The app connects through DATABASE_NAME: point it at the test DB, start empty.
+    admin_inquiries must be truncated with conversations: it references them."""
+    from app.rag import memory
+
+    monkeypatch.setenv("DATABASE_NAME", test_db)
+    with memory._connect() as conn:
+        assert conn.info.dbname == test_db, "app tests must never touch the real DB"
+    db.execute(
+        "TRUNCATE conversations, messages, admin_inquiries, unanswered_questions "
+        "RESTART IDENTITY"
+    )
+    return db
