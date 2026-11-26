@@ -21,7 +21,8 @@ CONTAINS = [
     ("شحال ثمن السماعات X1؟", ["499"]),
     ("ch7al kaydir keyboard K1?", ["699"]),
     ("Combien coûte la souris M1 ?", ["249"]),
-    ("Livrez-vous à Marrakech ?", ["2", "5", "ouvrables"]),
+    # the numbers and the city, not a French word ("ouvrables" / "ouvrés" both occur)
+    ("Livrez-vous à Marrakech ?", ["2", "5", "marrakech"]),
     ("Puis-je retourner un produit après 20 jours ?", ["14"]),
     ("yo how much for the mouse", ["249"]),
     ("is the keyboard in stock?", ["8"]),
@@ -44,10 +45,16 @@ INQUIRY = [
     "Can you repair my iPhone?",  # a service category the documents do not record
 ]
 
-# Angry complaint or off-topic: hand off to a human.
+# Angry complaint, off-topic, or personal/emotional: hand off to a human.
 HANDOFF = [
     "my delivery is late, this is unacceptable, I want my money back",
     "i love you",
+]
+
+# A real greeting or thank-you: a polite reply, no handoff and no inquiry.
+POLITE = [
+    "hello",
+    "thanks a lot",
 ]
 
 
@@ -96,3 +103,10 @@ def test_inquiry(rag, question):
 def test_handoff(rag, question):
     reply = ask(rag, question)
     assert reply == rag.HANDOFF_MESSAGE, f"got: {reply}"
+
+
+@pytest.mark.parametrize("question", POLITE)
+def test_polite_reply(rag, question):
+    result = ask_full(rag, question)
+    assert result.reply != rag.HANDOFF_MESSAGE
+    assert result.inquiry_topic is None, f"raised an inquiry: {result.inquiry_topic}"

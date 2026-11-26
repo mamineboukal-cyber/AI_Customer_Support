@@ -320,3 +320,11 @@ def test_six_tool_turns_without_a_reply_is_a_handoff(model):
     model(*searches, "never reached")
 
     assert rag.respond("...") == rag.HANDOFF
+
+
+# --- a greeting or thank-you reply (no tool, no digits) passes through ---------------
+
+def test_polite_reply_without_tools_is_kept(model):
+    model("Hello! How can I help you today?")
+
+    assert rag.respond("hello") == rag.AnswerResult("Hello! How can I help you today?", None)
