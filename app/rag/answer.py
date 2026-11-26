@@ -1,11 +1,13 @@
 import os
 import time
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from google.genai import errors
 
+from app.rag.inquiries import normalize_question, record_inquiry
 from app.rag.memory import get_history, get_or_create_conversation, save_message
 from app.rag.search import search
 
@@ -22,19 +24,27 @@ HISTORY_LIMIT = 6
 
 SYSTEM_PROMPT = """You are a customer support employee for MoroccoTech, an electronics store in Morocco.
 
-You have two tools:
+You have three tools:
 - search_documents: searches the store's documents (products, prices, stock, colors, warranty, delivery, returns, payment).
+- raise_admin_inquiry: asks the store's team for an answer the documents do not have; we come back to the customer later.
 - transfer_to_human: hands the customer to a human agent.
 
 Rules:
 - If the customer's message is only a greeting or a thank-you, reply politely and ask how you can help. Do not use any tool.
-- For any question about the store, call search_documents BEFORE answering. Answer ONLY from the search results. Never use outside knowledge and never invent prices, stock, policies or delays.
+- For any question about the store, call search_documents BEFORE answering. Answer ONLY from the search results. Never use outside knowledge and never invent prices, stock, features, policies or delays.
 - Use the conversation so far to understand what the customer refers to (for example "it" or "that one"), and put the product name in your search query.
 - The documents are written in English. Write search queries in English, even if the customer writes in French, Arabic or Darija.
 - If the question has several parts, search for each part separately.
-- If the results look weak or empty, try one different query before giving up.
-- The search results are the store's complete catalog. If a product, color, version or payment method is not mentioned, say clearly that we do not offer it and state what we do offer.
-- If you cannot find the answer after searching, or the message is not about the store, call transfer_to_human.
+- If the results look weak or empty, try one different query before deciding.
+
+After searching, decide:
+1. The answer is in the documents: answer it.
+2. The documents give a closed list (the products we sell, their colors, the accepted payment methods, the return window, the delivery cities) and the customer asks for something outside that list (for example a red X1 when only other colors are listed, paying with Bitcoin, a washing machine): say clearly that we do not offer it and state what we do offer.
+3. The product or topic is in the documents but the specific detail asked is not recorded (for example noise cancelling or battery life of a product we sell): never say that we do not offer it and never guess. Call raise_admin_inquiry.
+4. The topic is not covered by the documents at all (for example a store location, discounts, a loyalty program): call raise_admin_inquiry.
+5. The customer is angry, makes a complaint, or the message is not about the store: call transfer_to_human.
+
+- After raise_admin_inquiry, do what its result says. Never say "I don't know".
 - Reply in the language of the customer's message (including Darija). Keep answers short, clear and polite.
 """
 
@@ -56,17 +66,49 @@ search_declaration = types.FunctionDeclaration(
     ),
 )
 
+inquiry_declaration = types.FunctionDeclaration(
+    name="raise_admin_inquiry",
+    description=(
+        "Ask the store's team to answer a question the documents do not answer: a detail "
+        "that is not recorded about something we sell, or a topic the documents do not "
+        "cover. We come back to the customer later."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "topic": types.Schema(
+                type=types.Type.STRING,
+                description=(
+                    "A short English topic of what the customer wants to know, "
+                    "for example 'loyalty program' or 'X1 noise cancelling'."
+                ),
+            )
+        },
+        required=["topic"],
+    ),
+)
+
 transfer_declaration = types.FunctionDeclaration(
     name="transfer_to_human",
     description=(
-        "Hand the customer to a human agent. Use it only when the documents "
-        "do not contain the answer after searching, or the message is not about the store."
+        "Hand the customer to a human agent. Use it only when the customer is angry, "
+        "makes a complaint, or the message is not about the store."
     ),
+)
+
+INQUIRY_RESULT = (
+    "Inquiry noted. Tell the customer, in the language of their message, that we will "
+    "check and come back to them. Do not invent or guess any answer, and do not say "
+    "that you don't know."
 )
 
 config = types.GenerateContentConfig(
     system_instruction=SYSTEM_PROMPT,
-    tools=[types.Tool(function_declarations=[search_declaration, transfer_declaration])],
+    tools=[
+        types.Tool(
+            function_declarations=[search_declaration, inquiry_declaration, transfer_declaration]
+        )
+    ],
     # we run the tool loop ourselves
     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
 )
@@ -110,9 +152,20 @@ def _generate(contents):
             print(f"Gemini {e.code}, retrying in {RETRY_WAIT[attempt]}s...")
             time.sleep(RETRY_WAIT[attempt])
 
-def answer(question, history=None):
+@dataclass(frozen=True)
+class AnswerResult:
+    reply: str
+    # set only when the model raised an inquiry and the reply promises to come back
+    inquiry_topic: str | None = None
+
+
+HANDOFF = AnswerResult(HANDOFF_MESSAGE)
+
+
+def respond(question, history=None):
     """Answer one customer message. `history` is a list of (role, text) pairs,
-    role being "user" or "assistant". Touches no database apart from the search."""
+    role being "user" or "assistant". Returns an AnswerResult. Touches no database
+    apart from the search: recording an inquiry is chat()'s job."""
     contents = []
     for role, text in (history or [])[-HISTORY_LIMIT:]:
         gemini_role = "model" if role == "assistant" else "user"
@@ -123,6 +176,7 @@ def answer(question, history=None):
     contents.append(_text_content("user", question))
 
     searched = False
+    topic = None
 
     try:
         for _ in range(MAX_TURNS):
@@ -132,22 +186,31 @@ def answer(question, history=None):
             if not calls:
                 reply = (response.text or "").strip()
                 if not reply or "HANDOFF" in reply:
-                    return HANDOFF_MESSAGE
+                    return HANDOFF
                 # heuristic: a reply with numbers but no search is probably invented
                 if not searched and any(ch.isdigit() for ch in reply):
-                    return HANDOFF_MESSAGE
-                return reply
+                    return HANDOFF
+                return AnswerResult(reply, topic)
+
+            if any(call.name == "transfer_to_human" for call in calls):
+                return HANDOFF
 
             # keep the model's turn exactly as it came back
             contents.append(response.candidates[0].content)
 
             result_parts = []
             for call in calls:
-                if call.name == "transfer_to_human":
-                    return HANDOFF_MESSAGE
+                args = call.args or {}
                 if call.name == "search_documents":
                     searched = True
-                    result = _run_search((call.args or {}).get("query", ""))
+                    result = _run_search(args.get("query", ""))
+                elif call.name == "raise_admin_inquiry":
+                    asked = (args.get("topic") or "").strip()
+                    if not normalize_question(asked):
+                        return HANDOFF
+                    # one inquiry per message: the first topic is kept
+                    topic = topic or asked
+                    result = INQUIRY_RESULT
                 else:
                     result = "Unknown tool."
                 result_parts.append(
@@ -160,11 +223,16 @@ def answer(question, history=None):
             contents.append(types.Content(role="user", parts=result_parts))
 
         # the model kept asking for tools without giving an answer
-        return HANDOFF_MESSAGE
+        return HANDOFF
 
     except Exception as e:
         print("Gemini error:", e)
-        return ERROR_MESSAGE
+        return AnswerResult(ERROR_MESSAGE)
+
+
+def answer(question, history=None):
+    """The reply text only (see respond())."""
+    return respond(question, history).reply
 
 
 def chat(question, session_id=None):
@@ -172,7 +240,16 @@ def chat(question, session_id=None):
     Returns (reply, session_id)."""
     conversation_id, session_id = get_or_create_conversation(session_id)
     history = get_history(conversation_id, HISTORY_LIMIT)
-    reply = answer(question, history)
+    result = respond(question, history)
+    reply = result.reply
+    if result.inquiry_topic:
+        try:
+            if not record_inquiry(conversation_id, result.inquiry_topic):
+                # the admin ignores this question: do not promise to come back
+                reply = HANDOFF_MESSAGE
+        except Exception as e:
+            print("Could not record inquiry:", e)
+            reply = ERROR_MESSAGE
     # saved after answering, so `history` never contains the current question
     save_message(conversation_id, "user", question)
     save_message(conversation_id, "assistant", reply)

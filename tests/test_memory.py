@@ -11,16 +11,6 @@ from app.rag import memory
 from app.rag.memory import get_history, get_or_create_conversation, save_message
 
 
-@pytest.fixture
-def memory_db(db, test_db, monkeypatch):
-    """memory.py connects through DATABASE_NAME: point it at the test DB, start empty."""
-    monkeypatch.setenv("DATABASE_NAME", test_db)
-    with memory._connect() as conn:
-        assert conn.info.dbname == test_db, "memory tests must never touch the real DB"
-    db.execute("TRUNCATE conversations, messages RESTART IDENTITY")
-    return db
-
-
 def messages(conn, conversation_id):
     return conn.execute(
         "SELECT role, content FROM messages WHERE conversation_id = %s ORDER BY id",
@@ -100,11 +90,11 @@ def test_history_is_per_conversation(memory_db):
 def fake_answer(monkeypatch):
     calls = []
 
-    def answer(question, history=None):
+    def respond(question, history=None):
         calls.append((question, list(history)))
-        return f"reply to {question}"
+        return rag.AnswerResult(f"reply to {question}", None)
 
-    monkeypatch.setattr(rag, "answer", answer)
+    monkeypatch.setattr(rag, "respond", respond)
     return calls
 
 
