@@ -42,13 +42,17 @@ def test_same_session_id_returns_same_conversation(memory_db):
     assert memory_db.execute("SELECT count(*) FROM conversations").fetchone()[0] == 1
 
 
-def test_unknown_session_id_creates_conversation_with_that_id(memory_db):
+def test_unknown_session_id_starts_new_conversation_with_server_id(memory_db):
     wanted = uuid.uuid4()
 
     conversation_id, session_id = get_or_create_conversation(wanted)
 
-    assert session_id == wanted
-    assert get_or_create_conversation(wanted) == (conversation_id, wanted)
+    assert isinstance(session_id, uuid.UUID)
+    assert session_id != wanted
+    assert get_or_create_conversation(session_id) == (conversation_id, session_id)
+    assert memory_db.execute(
+        "SELECT count(*) FROM conversations WHERE session_id = %s", (wanted,)
+    ).fetchone()[0] == 0
 
 
 def test_no_session_id_always_starts_a_new_conversation(memory_db):
