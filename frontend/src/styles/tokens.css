@@ -1,0 +1,24 @@
+/* Design tokens: every color of the page is defined here and nowhere else. */
+:root {
+  --bg: #f4f2ff;
+  --card: #ffffff;
+  --lavender: #e9e4ff;
+  --purple: #5b3df5;
+  --purple-deep: #3a22b8;
+  --blue: #3b82f6;
+  --sky: #dbeafe;
+  --text: #1d1b2f;
+  --muted: #6b6880;
+  --on-purple: #ffffff;
+  --line: #e4e0f5;
+  --disabled: #c9c3e6;
+  --error-bg: #fff1f2;
+  --error-text: #9f1239;
+  --shadow: 0 8px 24px rgba(58, 34, 184, 0.08);
+
+  --user-bubble: var(--purple);
+  --bot-bubble: #f1efff;
+
+  --radius-card: 28px;
+  --radius-bubble: 20px;
+}
