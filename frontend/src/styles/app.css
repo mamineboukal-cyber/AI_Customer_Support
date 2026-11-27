@@ -1,0 +1,497 @@
+/* Layout and components. Colors come from tokens.css.
+   Only logical properties (inline = left/right, block = top/bottom), so the
+   same CSS works when the page switches to dir="rtl". */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", sans-serif;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* ---------- Bento grid ---------- */
+
+.page {
+  padding: 24px;
+}
+
+.bento {
+  display: grid;
+  gap: 16px;
+  max-inline-size: 1180px;
+  margin-inline: auto;
+}
+
+.card {
+  background: var(--card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+
+.card h2 {
+  font-size: 1rem;
+  margin-block-end: 12px;
+}
+
+/* Desktop: chat on the left over 3 rows, the small cards stacked on the right. */
+@media (min-width: 900px) {
+  .bento {
+    grid-template-columns: 2fr 1fr;
+    grid-template-rows: auto auto 1fr;
+  }
+
+  .card-chat {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    block-size: min(820px, calc(100dvh - 48px));
+  }
+}
+
+/* Phone and small tablet: one column, chat first (it is first in the HTML). */
+@media (max-width: 899px) {
+  .page {
+    padding: 12px;
+  }
+
+  .card-chat {
+    block-size: 78dvh;
+    min-block-size: 480px;
+  }
+}
+
+/* ---------- Chat card ---------- */
+
+.card-chat {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-block-end: 1px solid var(--line);
+}
+
+.chat-header-text {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.chat-header h1 {
+  font-size: 1.05rem;
+}
+
+.chat-header p {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.new-chat-button {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: var(--lavender);
+  color: var(--purple-deep);
+  font-weight: 600;
+}
+
+.message-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+}
+
+.message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---------- Messages ---------- */
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-inline-size: 80%;
+}
+
+/* flex-end / flex-start follow the text direction, so in RTL the sides swap. */
+.message-user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.message-bot {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.bubble {
+  padding: 10px 14px;
+  border-radius: var(--radius-bubble);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.message-user .bubble {
+  background: var(--user-bubble);
+  color: var(--on-purple);
+  border-end-end-radius: 6px;
+}
+
+.message-bot .bubble {
+  background: var(--bot-bubble);
+  color: var(--text);
+  border-end-start-radius: 6px;
+}
+
+.message-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+/* ---------- Handoff: centered system line + card ---------- */
+
+.handoff {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.system-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  inline-size: 100%;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.system-line::before,
+.system-line::after {
+  content: "";
+  flex: 1;
+  border-block-start: 1px solid var(--line);
+}
+
+.handoff-card {
+  max-inline-size: 420px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: var(--sky);
+  line-height: 1.45;
+}
+
+.handoff-title {
+  font-weight: 700;
+  margin-block-end: 4px;
+}
+
+/* ---------- Error ---------- */
+
+.error-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.error-notice p {
+  flex: 1;
+  min-inline-size: 200px;
+}
+
+.retry-button {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  background: var(--error-text);
+  color: var(--on-purple);
+  font-weight: 600;
+}
+
+/* ---------- Typing indicator ---------- */
+
+.typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-block-start: 14px;
+  padding: 10px 14px;
+  border-radius: var(--radius-bubble);
+  background: var(--bot-bubble);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.typing-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.typing-dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--purple);
+}
+
+/* ---------- Composer ---------- */
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 12px;
+  padding-block: 6px;
+  padding-inline: 16px 6px;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  background: var(--card);
+}
+
+.composer:focus-within {
+  border-color: var(--purple);
+}
+
+.composer-input {
+  flex: 1;
+  padding-block: 9px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.4;
+  max-block-size: calc(1.4em * 5 + 18px);
+}
+
+.composer-counter {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.send-button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  inline-size: 44px;
+  block-size: 44px;
+  border: none;
+  border-radius: 50%;
+  background: var(--purple);
+  color: var(--on-purple);
+}
+
+.send-button:disabled {
+  background: var(--disabled);
+}
+
+.send-button svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- Small cards ---------- */
+
+.card-bot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  background: linear-gradient(135deg, var(--purple), var(--blue));
+  color: var(--on-purple);
+}
+
+.card-bot h2 {
+  font-size: 1.6rem;
+  margin-block: 8px 0;
+}
+
+.card-quick {
+  background: var(--lavender);
+}
+
+.quick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.quick-button {
+  inline-size: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--text);
+  text-align: start;
+}
+
+.quick-button:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+.quick-button:disabled {
+  opacity: 0.55;
+}
+
+.card-facts {
+  background: var(--sky);
+}
+
+.facts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fact {
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--card);
+}
+
+.fact-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.fact-value {
+  margin-block-start: 4px;
+  color: var(--purple-deep);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+/* ---------- Bot icon colors ---------- */
+
+.bot-icon {
+  flex-shrink: 0;
+}
+
+.bot-icon-bg {
+  fill: var(--lavender);
+}
+
+.bot-icon-head {
+  fill: var(--purple);
+}
+
+.bot-icon-face {
+  fill: var(--card);
+}
+
+.bot-icon-eye {
+  fill: var(--purple-deep);
+}
+
+.bot-icon-smile {
+  fill: none;
+  stroke: var(--purple-deep);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.bot-icon-line {
+  stroke: var(--purple);
+  stroke-width: 3;
+}
+
+.bot-icon-accent {
+  fill: var(--blue);
+}
+
+/* ---------- Motion: only for people who did not ask for less motion ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .message,
+  .handoff,
+  .error-notice,
+  .typing {
+    animation: appear 220ms ease-out;
+  }
+
+  .typing-dot {
+    animation: bounce 1s infinite ease-in-out;
+  }
+
+  .typing-dot:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .typing-dot:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-5px);
+  }
+}
