@@ -99,7 +99,7 @@ def _print_report(results: list[FileResult], processed: Path | None) -> None:
 
 
 def main(argv=None, conn=None) -> int:
-    parser = argparse.ArgumentParser(description="Ingest every .md/.txt file in a folder.")
+    parser = argparse.ArgumentParser(description="Ingest every .md, .txt and .pdf file in a folder.")
     parser.add_argument("folder", nargs="?", default="data/inbox", type=Path)
     parser.add_argument("--processed", default="data/processed", type=Path,
                         help="where ingested files are moved (default: data/processed)")
