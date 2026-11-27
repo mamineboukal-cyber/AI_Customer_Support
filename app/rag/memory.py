@@ -19,7 +19,9 @@ def _connect():
 
 
 def get_or_create_conversation(session_id=None):
-    """Return (conversation_id, session_id); start a new conversation if needed."""
+    """Return (conversation_id, session_id); start a new conversation if needed.
+    An unknown session_id is not reused: the new conversation gets an id from the
+    database, so a client can never choose its own session id."""
     with _connect() as conn:
         if session_id is not None:
             row = conn.execute(
@@ -28,10 +30,6 @@ def get_or_create_conversation(session_id=None):
             ).fetchone()
             if row:
                 return row
-            return conn.execute(
-                "INSERT INTO conversations (session_id) VALUES (%s) RETURNING id, session_id",
-                (session_id,),
-            ).fetchone()
         return conn.execute(
             "INSERT INTO conversations DEFAULT VALUES RETURNING id, session_id"
         ).fetchone()

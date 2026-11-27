@@ -5,3 +5,5 @@ langchain-text-splitters
 google-genai
 python-dotenv
 alembic
+fastapi
+uvicorn
