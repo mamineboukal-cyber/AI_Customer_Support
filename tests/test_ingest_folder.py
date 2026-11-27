@@ -99,19 +99,19 @@ def test_failure_halfway_stays_in_inbox_and_others_continue(
 def test_empty_and_unsupported_files_stay_with_reason(inbox, processed, db, db2):
     put(inbox, "empty.txt", "")
     put(inbox, "blank.md", "  \n\n")
-    put(inbox, "manual.pdf", "%PDF-1.7")
+    put(inbox, "manual.docx", "PK not really a docx")
 
     results = by_name(ingest_folder(inbox, processed, db))
 
     assert {n: r.status for n, r in results.items()} == {
         "empty.txt": "failed",
         "blank.md": "failed",
-        "manual.pdf": "failed",
+        "manual.docx": "failed",
     }
     assert "empty" in results["empty.txt"].error
     assert "empty" in results["blank.md"].error
-    assert "unsupported" in results["manual.pdf"].error
-    assert sorted(p.name for p in inbox.iterdir()) == ["blank.md", "empty.txt", "manual.pdf"]
+    assert "unsupported" in results["manual.docx"].error
+    assert sorted(p.name for p in inbox.iterdir()) == ["blank.md", "empty.txt", "manual.docx"]
     assert db2.execute("SELECT count(*) FROM documents").fetchone()[0] == 0
 
 
@@ -253,3 +253,72 @@ def test_main_category_option_overrides(inbox, processed, db, db2):
     assert main([str(inbox), "--keep", "--category", "promo"], conn=db) == 0
 
     assert db2.execute("SELECT category FROM documents").fetchone()[0] == "promo"
+
+
+# PDF: same pipeline as .md/.txt; a bad PDF fails alone and writes nothing.
+GUIDE_PAGES = [["Wireless Headphones X1", "Price: 499 MAD"], ["Free shipping above 500 MAD"]]
+GUIDE_TEXT = "Wireless Headphones X1\nPrice: 499 MAD\n\nFree shipping above 500 MAD"
+
+
+def test_pdf_is_ingested_chunked_and_moved(inbox, processed, db, db2, make_pdf):
+    make_pdf(inbox / "Store_Guide.pdf", GUIDE_PAGES)
+
+    [result] = ingest_folder(inbox, processed, db)
+
+    assert (result.status, result.moved, result.error) == ("created", True, None)
+    assert (processed / "Store_Guide.pdf").exists()
+    row = db2.execute(
+        "SELECT d.title, d.content, count(c.id) FROM documents d "
+        "JOIN document_chunks c ON c.document_id = d.id "
+        "WHERE d.source_name = 'store_guide' GROUP BY d.id"
+    ).fetchone()
+    assert row == ("Store_Guide", GUIDE_TEXT, len(ingest.split_text(GUIDE_TEXT)))
+
+
+def test_unchanged_pdf_is_skipped(inbox, processed, db, make_pdf):
+    make_pdf(inbox / "guide.pdf", GUIDE_PAGES)
+    ingest_folder(inbox, processed, db)
+    make_pdf(inbox / "guide.pdf", GUIDE_PAGES)
+
+    [result] = ingest_folder(inbox, processed, db)
+
+    assert (result.status, result.moved) == ("skipped", True)
+
+
+def test_pdf_replaces_md_with_the_same_name(inbox, processed, db, db2, make_pdf):
+    put(inbox, "guide.md", V1)
+    ingest_folder(inbox, processed, db)
+    make_pdf(inbox / "Guide.pdf", GUIDE_PAGES)
+
+    [result] = ingest_folder(inbox, processed, db)
+
+    assert result.status == "updated"
+    assert db2.execute("SELECT source_name, content FROM documents").fetchall() == [("guide", GUIDE_TEXT)]
+
+
+def test_bad_pdfs_fail_alone_and_write_nothing(inbox, processed, db, db2, make_pdf):
+    make_pdf(inbox / "good.pdf", GUIDE_PAGES)
+    make_pdf(inbox / "scan.pdf", [[], []])
+    (inbox / "broken.pdf").write_bytes(b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog")
+    put(inbox, "notes.md", OTHER)
+
+    results = by_name(ingest_folder(inbox, processed, db))
+
+    assert {n: r.status for n, r in results.items()} == {
+        "broken.pdf": "failed",
+        "good.pdf": "created",
+        "notes.md": "created",
+        "scan.pdf": "failed",
+    }
+    assert results["scan.pdf"].error == (
+        "EmptyDocument: no extractable text in this PDF (a scan? run OCR first)"
+    )
+    assert results["broken.pdf"].error.startswith("UnreadablePdf: cannot read PDF: ")
+    assert sorted(p.name for p in inbox.iterdir()) == ["broken.pdf", "scan.pdf"]
+    assert sorted(r[0] for r in db2.execute("SELECT source_name FROM documents")) == ["good", "notes"]
+
+
+def test_main_exit_code_is_1_when_a_pdf_fails(inbox, processed, db, make_pdf):
+    make_pdf(inbox / "scan.pdf", [[]])
+
+    assert main([str(inbox), "--processed", str(processed)], conn=db) == 1

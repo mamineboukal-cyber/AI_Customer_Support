@@ -125,3 +125,51 @@ def memory_db(db, test_db, monkeypatch):
         "RESTART IDENTITY"
     )
     return db
+
+
+def _pdf_bytes(pages: list[list[str]]) -> bytes:
+    """A minimal valid PDF, built by hand so no binary fixture is committed.
+    Each page is a list of text lines (Helvetica); an empty list is a page with no
+    text, like a scanned page without OCR."""
+    def escape(line: str) -> str:
+        return line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+    n = len(pages)
+    kids = " ".join(f"{4 + 2 * i} 0 R" for i in range(n))
+    objects = {
+        1: b"<< /Type /Catalog /Pages 2 0 R >>",
+        2: f"<< /Type /Pages /Kids [{kids}] /Count {n} >>".encode(),
+        3: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    }
+    for i, lines in enumerate(pages):
+        page_id, content_id = 4 + 2 * i, 5 + 2 * i
+        shown = " T* ".join(f"({escape(line)}) Tj" for line in lines)
+        stream = f"BT /F1 12 Tf 14 TL 72 720 Td {shown} ET".encode("latin-1")
+        objects[page_id] = (
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            f"/Resources << /Font << /F1 3 0 R >> >> /Contents {content_id} 0 R >>"
+        ).encode()
+        objects[content_id] = b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream"
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = {}
+    for number in sorted(objects):
+        offsets[number] = len(out)
+        out += b"%d 0 obj\n" % number + objects[number] + b"\nendobj\n"
+    xref = len(out)
+    size = len(objects) + 1
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % size
+    for number in range(1, size):
+        out += b"%010d 00000 n \n" % offsets[number]
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (size, xref)
+    return bytes(out)
+
+
+@pytest.fixture
+def make_pdf():
+    """make_pdf(path, [["page 1 line 1", "line 2"], ["page 2"]]) writes a PDF there."""
+    def write(path: Path, pages: list[list[str]]) -> Path:
+        path.write_bytes(_pdf_bytes(pages))
+        return path
+
+    return write
