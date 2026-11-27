@@ -142,6 +142,41 @@ describe("App", () => {
   });
 });
 
+describe("App with old saved data", () => {
+  const time = "2026-11-27T10:00:00.000Z";
+
+  test("a saved message without a time does not break the page", () => {
+    localStorage.setItem(
+      "moroccotech-chat-v1",
+      JSON.stringify({ sessionId: "A", messages: [{ id: "1", role: "bot", text: "old" }] }),
+    );
+
+    render(<App />);
+
+    expect(screen.getByText(STRINGS.greeting)).toBeInTheDocument();
+  });
+
+  test("a question left without a reply (page closed while waiting) gets a Retry", async () => {
+    const api = controlledFetch();
+    localStorage.setItem(
+      "moroccotech-chat-v1",
+      JSON.stringify({
+        sessionId: "A",
+        messages: [
+          { id: "1", role: "bot", text: STRINGS.greeting, time },
+          { id: "2", role: "user", text: "Is the K1 in stock?", time },
+        ],
+      }),
+    );
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: STRINGS.retry }));
+
+    expect(api.calls[0].body).toEqual({ message: "Is the K1 in stock?", session_id: "A" });
+    expect(screen.getAllByText("Is the K1 in stock?")).toHaveLength(1);
+  });
+});
+
 describe("useChat", () => {
   test("two sends in the same moment make only one request", async () => {
     const api = controlledFetch();

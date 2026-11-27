@@ -3,11 +3,29 @@
 // every access is wrapped: a problem means "no saved chat", never a crash.
 const KEY = "moroccotech-chat-v1";
 
+const ROLES = ["user", "bot", "handoff", "error"];
+
+// Saved data may come from an older version of the page or be edited by hand:
+// keep only messages the page can draw, so one bad item cannot break it.
+function isValidMessage(message) {
+  return (
+    typeof message?.id === "string" &&
+    ROLES.includes(message.role) &&
+    typeof message.text === "string" &&
+    typeof message.time === "string" &&
+    !Number.isNaN(Date.parse(message.time)) &&
+    (message.role !== "error" || typeof message.retryText === "string")
+  );
+}
+
 export function loadChat() {
   try {
     const data = JSON.parse(localStorage.getItem(KEY));
     if (!data || !Array.isArray(data.messages)) return null;
-    return { sessionId: data.sessionId ?? null, messages: data.messages };
+    const messages = data.messages.filter(isValidMessage);
+    if (messages.length === 0) return null;
+    const sessionId = typeof data.sessionId === "string" ? data.sessionId : null;
+    return { sessionId, messages };
   } catch {
     return null;
   }

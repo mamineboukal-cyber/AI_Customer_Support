@@ -19,12 +19,22 @@ function freshChat() {
   return { sessionId: null, messages: [makeMessage("bot", STRINGS.greeting)] };
 }
 
+// The saved chat, or a new one. If the page was closed while waiting (the last
+// item is the customer's question), add an error item so they can press Retry.
+function restoreChat() {
+  const saved = loadChat();
+  if (!saved) return freshChat();
+  const last = saved.messages[saved.messages.length - 1];
+  if (last.role !== "user") return saved;
+  return { ...saved, messages: [...saved.messages, makeMessage("error", "", { retryText: last.text })] };
+}
+
 // All the chat logic in one place; the components only display what it returns.
 // - messages: everything shown in the chat (user, bot, handoff and error items)
 // - waiting: true while a reply is on its way
 // - send(text), retry(errorId), newChat()
 export default function useChat() {
-  const [chat, setChat] = useState(() => loadChat() ?? freshChat());
+  const [chat, setChat] = useState(restoreChat);
   const [waiting, setWaiting] = useState(false);
   // Refs change immediately (state only changes on the next render), so they
   // can stop a second send in the same moment and spot replies from an old chat.

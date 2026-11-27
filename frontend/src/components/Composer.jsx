@@ -14,6 +14,7 @@ export default function Composer({ disabled, onSend }) {
 
   function resize() {
     const input = inputRef.current;
+    if (!input) return; // the component may be gone by the next animation frame
     input.style.height = "auto";
     input.style.height = `${input.scrollHeight}px`;
   }

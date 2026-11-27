@@ -38,7 +38,7 @@ const STRINGS = {
   factsTitle: "Good to know",
   facts: [
     { value: "500 MAD", label: "Free shipping above" },
-    { value: "1–2 days", label: "Delivery to Casablanca and Rabat" },
+    { value: "1–2 business days", label: "Delivery to Casablanca and Rabat" },
     { value: "14 days", label: "To return an unused product" },
     { value: "Cash or card", label: "Cash on delivery all over Morocco, or pay by card" },
   ],

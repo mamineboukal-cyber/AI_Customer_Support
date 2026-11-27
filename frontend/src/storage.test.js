@@ -40,6 +40,40 @@ describe("storage", () => {
     expect(loadChat()).toBeNull();
   });
 
+  test("broken messages are dropped and the good ones kept", () => {
+    const good = chat.messages[0];
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        sessionId: "abc",
+        messages: [
+          null,
+          { id: "2", role: "bot", text: "no time" },
+          { id: "3", role: "bot", text: "bad time", time: "yesterday" },
+          { id: "4", role: "robot", text: "unknown role", time: good.time },
+          { id: "5", role: "error", text: "", time: good.time },
+          good,
+        ],
+      }),
+    );
+
+    expect(loadChat()).toEqual({ sessionId: "abc", messages: [good] });
+  });
+
+  test("no valid message left gives null", () => {
+    localStorage.setItem(KEY, JSON.stringify({ sessionId: "abc", messages: [] }));
+    expect(loadChat()).toBeNull();
+
+    localStorage.setItem(KEY, JSON.stringify({ sessionId: "abc", messages: [{ id: "1" }] }));
+    expect(loadChat()).toBeNull();
+  });
+
+  test("a session id that is not a string is forgotten", () => {
+    localStorage.setItem(KEY, JSON.stringify({ sessionId: 42, messages: chat.messages }));
+
+    expect(loadChat()).toEqual({ sessionId: null, messages: chat.messages });
+  });
+
   test("clearChat removes the saved chat", () => {
     saveChat(chat);
     clearChat();
