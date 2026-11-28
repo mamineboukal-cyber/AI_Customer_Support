@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import STRINGS from "./strings";
 import { sendMessage } from "./api";
-import { clearChat, loadChat, saveChat } from "./storage";
+import { clearChat, loadChat, loadVisitorId, saveChat, saveVisitorId } from "./storage";
 
 // Not crypto.randomUUID(): browsers only offer it on https or localhost,
 // and the page may be opened from a phone on the local network over http.
@@ -40,6 +40,11 @@ export default function useChat() {
   // can stop a second send in the same moment and spot replies from an old chat.
   const busy = useRef(false);
   const generation = useRef(0);
+  // The visitor id from the server, kept in memory too: without storage the page
+  // still sends the same id for as long as it stays open. Not part of the chat,
+  // so "New chat" keeps it.
+  const visitorId = useRef(undefined);
+  if (visitorId.current === undefined) visitorId.current = loadVisitorId();
 
   useEffect(() => {
     saveChat(chat);
@@ -54,7 +59,12 @@ export default function useChat() {
     setWaiting(true);
     const myGeneration = generation.current;
     try {
-      const result = await sendMessage(text, chat.sessionId);
+      const result = await sendMessage(text, chat.sessionId, visitorId.current);
+      // Before the "New chat" check: the visitor id stays valid across chats.
+      if (result.visitorId && result.visitorId !== visitorId.current) {
+        visitorId.current = result.visitorId;
+        saveVisitorId(result.visitorId);
+      }
       if (myGeneration !== generation.current) return; // "New chat" was pressed meanwhile
       // Always keep the id from the LAST response: the server replaces ids it does not know.
       setChat((current) => ({

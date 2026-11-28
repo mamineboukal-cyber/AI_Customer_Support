@@ -18,28 +18,63 @@ def _connect():
     )
 
 
-def get_or_create_conversation(session_id=None):
-    """Return (conversation_id, session_id); start a new conversation if needed.
-    An unknown session_id is not reused: the new conversation gets an id from the
-    database, so a client can never choose its own session id."""
+def _visitor(conn, visitor_id):
+    """The id of an existing visitor, else of a new one. An unknown id is never
+    inserted: like session ids, visitor ids are only ever created by the database."""
+    if visitor_id is not None:
+        row = conn.execute("SELECT id FROM visitors WHERE id = %s", (visitor_id,)).fetchone()
+        if row:
+            return row[0]
+    return conn.execute("INSERT INTO visitors DEFAULT VALUES RETURNING id").fetchone()[0]
+
+
+def open_conversation(session_id=None, visitor_id=None):
+    """Return (conversation_id, session_id, visitor_id), in one transaction.
+
+    - Known session_id: that conversation. Its visitor wins over the one sent: a
+      conversation never moves to another visitor. A conversation without a visitor
+      (from before visitors existed) is linked to the visitor sent, or a new one.
+    - Missing or unknown session_id: a new conversation, linked to the visitor sent
+      if it exists, else to a new visitor.
+    Unknown ids are never reused: the database creates every id."""
     with _connect() as conn:
         if session_id is not None:
             row = conn.execute(
-                "SELECT id, session_id FROM conversations WHERE session_id = %s",
+                "SELECT id, session_id, visitor_id FROM conversations WHERE session_id = %s "
+                "FOR UPDATE",
                 (session_id,),
             ).fetchone()
             if row:
-                return row
-        return conn.execute(
-            "INSERT INTO conversations DEFAULT VALUES RETURNING id, session_id"
+                conversation_id, session_id, owner = row
+                if owner is None:
+                    owner = _visitor(conn, visitor_id)
+                    conn.execute(
+                        "UPDATE conversations SET visitor_id = %s WHERE id = %s",
+                        (owner, conversation_id),
+                    )
+                return conversation_id, session_id, owner
+        visitor_id = _visitor(conn, visitor_id)
+        conversation_id, session_id = conn.execute(
+            "INSERT INTO conversations (visitor_id) VALUES (%s) RETURNING id, session_id",
+            (visitor_id,),
         ).fetchone()
+        return conversation_id, session_id, visitor_id
 
 
-def save_message(conversation_id, role, content):
+def get_or_create_conversation(session_id=None):
+    """Return (conversation_id, session_id); start a new conversation if needed
+    (see open_conversation, which also returns the visitor)."""
+    return open_conversation(session_id)[:2]
+
+
+def save_message(conversation_id, role, content, reply_kind=None):
+    """reply_kind is required for assistant messages and must be None for the others
+    (enforced by the database)."""
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO messages (conversation_id, role, content) VALUES (%s, %s, %s)",
-            (conversation_id, role, content),
+            "INSERT INTO messages (conversation_id, role, content, reply_kind) "
+            "VALUES (%s, %s, %s, %s)",
+            (conversation_id, role, content, reply_kind),
         )
 
 

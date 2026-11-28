@@ -1,5 +1,5 @@
 import { describe, expect, test, vi, afterEach } from "vitest";
-import { clearChat, loadChat, saveChat } from "./storage";
+import { clearChat, loadChat, loadVisitorId, saveChat, saveVisitorId } from "./storage";
 
 const KEY = "moroccotech-chat-v1";
 const chat = {
@@ -78,5 +78,51 @@ describe("storage", () => {
     saveChat(chat);
     clearChat();
     expect(loadChat()).toBeNull();
+  });
+});
+
+describe("visitor id storage", () => {
+  const VISITOR_KEY = "moroccotech-visitor-v1";
+  const id = "0f8fad5b-d9cb-469f-a165-70867728950e";
+
+  test("save then load gives the id back", () => {
+    saveVisitorId(id);
+    expect(loadVisitorId()).toBe(id);
+  });
+
+  test("nothing saved gives null", () => {
+    expect(loadVisitorId()).toBeNull();
+  });
+
+  test("upper case is a valid id too", () => {
+    localStorage.setItem(VISITOR_KEY, id.toUpperCase());
+    expect(loadVisitorId()).toBe(id.toUpperCase());
+  });
+
+  test.each(["", "abc", "0f8fad5b-d9cb-469f-a165", `${id}x`, `"${id}"`, "{}"])(
+    "a value that is not a UUID (%j) gives null",
+    (value) => {
+      localStorage.setItem(VISITOR_KEY, value);
+      expect(loadVisitorId()).toBeNull();
+    },
+  );
+
+  test("a storage that throws does not crash save or load", () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    expect(() => saveVisitorId(id)).not.toThrow();
+    expect(loadVisitorId()).toBeNull();
+  });
+
+  test("clearChat (New chat) keeps the visitor id", () => {
+    saveChat(chat);
+    saveVisitorId(id);
+    clearChat();
+    expect(loadChat()).toBeNull();
+    expect(loadVisitorId()).toBe(id);
   });
 });

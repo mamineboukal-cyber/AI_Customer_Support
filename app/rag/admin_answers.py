@@ -137,8 +137,9 @@ def _store(inquiry_id, conversation_id, admin_answer, reply):
         if row is None:
             return False
         conn.execute(
-            "INSERT INTO messages (conversation_id, role, content) "
-            "VALUES (%s, 'assistant', %s)",
+            # The admin's answer, delivered: an answer like any other (migration 0006).
+            "INSERT INTO messages (conversation_id, role, content, reply_kind) "
+            "VALUES (%s, 'assistant', %s, 'normal')",
             (conversation_id, reply),
         )
         return True

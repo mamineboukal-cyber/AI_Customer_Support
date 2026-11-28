@@ -35,10 +35,11 @@ def test_admin_reply(memory_db, case):
     conversation = db.execute(
         "INSERT INTO conversations DEFAULT VALUES RETURNING id"
     ).fetchone()[0]
-    for role, text in (("user", question), ("assistant", promise)):
+    for role, text, kind in (("user", question, None), ("assistant", promise, "inquiry")):
         db.execute(
-            "INSERT INTO messages (conversation_id, role, content) VALUES (%s, %s, %s)",
-            (conversation, role, text),
+            "INSERT INTO messages (conversation_id, role, content, reply_kind) "
+            "VALUES (%s, %s, %s, %s)",
+            (conversation, role, text, kind),
         )
     ledger = db.execute(
         "INSERT INTO unanswered_questions (question, normalized_question) "

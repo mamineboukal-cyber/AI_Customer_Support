@@ -8,7 +8,7 @@ from google.genai import types
 from google.genai import errors
 
 from app.rag.inquiries import normalize_question, record_inquiry
-from app.rag.memory import get_history, get_or_create_conversation, save_message
+from app.rag.memory import get_history, open_conversation, save_message
 from app.rag.search import search
 
 load_dotenv()
@@ -239,25 +239,53 @@ def answer(question, history=None):
     return respond(question, history).reply
 
 
-def chat(question, session_id=None):
-    """One turn of a stored conversation: read history, answer, save both messages.
-    Returns (reply, session_id)."""
-    conversation_id, session_id = get_or_create_conversation(session_id)
+@dataclass(frozen=True)
+class ChatTurn:
+    reply: str
+    # messages.reply_kind: "normal", "inquiry" (an inquiry was recorded and the reply
+    # promises to come back), "handoff" or "error"
+    reply_kind: str
+    session_id: object  # uuid.UUID
+    visitor_id: object  # uuid.UUID
+
+
+def _kind_of(reply):
+    # respond() returns these two texts only through HANDOFF and its error path
+    if reply == HANDOFF_MESSAGE:
+        return "handoff"
+    if reply == ERROR_MESSAGE:
+        return "error"
+    return "normal"
+
+
+def chat_turn(question, session_id=None, visitor_id=None):
+    """One turn of a stored conversation: read history, answer, save both messages
+    (the reply with its kind). Returns a ChatTurn."""
+    conversation_id, session_id, visitor_id = open_conversation(session_id, visitor_id)
     history = get_history(conversation_id, HISTORY_LIMIT)
     result = respond(question, history)
     reply = result.reply
+    kind = _kind_of(reply)
     if result.inquiry_topic:
         try:
-            if not record_inquiry(conversation_id, result.inquiry_topic):
+            if record_inquiry(conversation_id, result.inquiry_topic):
+                kind = "inquiry"
+            else:
                 # the admin ignores this question: do not promise to come back
-                reply = HANDOFF_MESSAGE
+                reply, kind = HANDOFF_MESSAGE, "handoff"
         except Exception as e:
             print("Could not record inquiry:", e)
-            reply = ERROR_MESSAGE
+            reply, kind = ERROR_MESSAGE, "error"
     # saved after answering, so `history` never contains the current question
     save_message(conversation_id, "user", question)
-    save_message(conversation_id, "assistant", reply)
-    return reply, session_id
+    save_message(conversation_id, "assistant", reply, kind)
+    return ChatTurn(reply, kind, session_id, visitor_id)
+
+
+def chat(question, session_id=None):
+    """chat_turn() for callers that only need (reply, session_id)."""
+    turn = chat_turn(question, session_id)
+    return turn.reply, turn.session_id
 
 
 if __name__ == "__main__":

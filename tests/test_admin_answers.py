@@ -47,9 +47,11 @@ def reply(text, covered=True):
 def _conversation(db, *messages):
     cid = db.execute("INSERT INTO conversations DEFAULT VALUES RETURNING id").fetchone()[0]
     for role, content in messages:
+        # Assistant messages need a reply_kind (0006); these are the inquiry promises.
         db.execute(
-            "INSERT INTO messages (conversation_id, role, content) VALUES (%s, %s, %s)",
-            (cid, role, content),
+            "INSERT INTO messages (conversation_id, role, content, reply_kind) "
+            "VALUES (%s, %s, %s, %s)",
+            (cid, role, content, "inquiry" if role == "assistant" else None),
         )
     return cid
 
@@ -161,6 +163,12 @@ def test_every_waiting_conversation_gets_a_saved_reply_and_is_delivered(two_wait
         "assistant", "Yes! Members get 10% off after their third order.")
     assert messages(t.db, t.b)[-1] == (
         "assistant", "Oui ! Les membres ont 10% de réduction après la troisième commande.")
+    # The delivered answer is an ordinary answer for the statistics (0006).
+    assert t.db.execute(
+        "SELECT reply_kind FROM messages WHERE conversation_id IN (%s, %s) "
+        "AND role = 'assistant' ORDER BY id DESC LIMIT 2",
+        (t.a, t.b),
+    ).fetchall() == [("normal",), ("normal",)]
 
 
 def test_model_sees_the_conversation_and_the_admin_answer(two_waiting, model):
