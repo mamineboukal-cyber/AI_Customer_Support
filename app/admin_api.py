@@ -5,11 +5,12 @@ NO AUTHENTICATION YET: run the app on 127.0.0.1 only (see README).
 """
 from dataclasses import asdict
 
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, File, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 
+from app import admin_data
 from app.ingestion.upload import MAX_UPLOAD_BYTES, UploadError, save_and_ingest
 
 # Room for the multipart boundaries and part headers around the file itself; the
@@ -68,3 +69,39 @@ def upload(file: UploadFile | None = File(None, description="one PDF, at most 10
 router.add_api_route(
     "/upload", upload, methods=["POST"], route_class_override=SizeLimitedRoute
 )
+
+
+# Plain defs below too: they query the database, so FastAPI runs them in a worker thread.
+@router.get("/stats")
+def stats():
+    """Numbers for the dashboard home page; "today" is the Africa/Casablanca day."""
+    try:
+        return admin_data.stats()
+    except Exception as e:
+        return _error(500, f"could not read the statistics: {type(e).__name__}: {e}")
+
+
+@router.get("/documents")
+def documents():
+    """The knowledge base documents, most recently added or updated first."""
+    try:
+        return {"documents": admin_data.list_documents()}
+    except Exception as e:
+        return _error(500, f"could not list the documents: {type(e).__name__}: {e}")
+
+
+@router.delete("/documents/{document_id}", status_code=204)
+def delete_document(document_id: str):
+    """Delete the document and its chunks. The file in data/processed is kept."""
+    # A str, not an int: a malformed id must answer {"detail": "..."} like the other
+    # errors, not FastAPI's 422 list. An id that is not a number cannot exist.
+    not_found = _error(404, f"document {document_id} not found")
+    if not (document_id.isascii() and document_id.isdigit()):
+        return not_found
+    try:
+        deleted = admin_data.delete_document(int(document_id))
+    except Exception as e:
+        return _error(500, f"could not delete the document: {type(e).__name__}: {e}")
+    if not deleted:
+        return not_found
+    return Response(status_code=204)
