@@ -2,9 +2,12 @@ from fastapi import FastAPI
 from uuid import UUID
 from pydantic import BaseModel, Field
 
+from app.admin_api import router as admin_router
 from app.rag.answer import HANDOFF_MESSAGE, chat
 
 app = FastAPI()
+# No authentication yet: see README before exposing these routes.
+app.include_router(admin_router, prefix="/admin")
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
