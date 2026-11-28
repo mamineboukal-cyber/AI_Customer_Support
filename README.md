@@ -6,10 +6,21 @@ RAG customer-support bot for MoroccoTech (Postgres + pgvector retrieval, Gemini 
 
 ## Admin routes (`/admin/...`): no authentication yet
 
-The admin routes, such as `POST /admin/upload` (one PDF of up to 10 MB, saved in
-`data/inbox`, ingested, then moved to `data/processed`), have **no login yet**. Anyone who can reach the server can
-upload documents into the bot's knowledge base. Until authentication exists, run the
-API on the loopback address only:
+The admin routes have **no login yet**:
+
+- `POST /admin/upload`: one PDF of up to 10 MB, saved in `data/inbox`, ingested, then
+  moved to `data/processed`.
+- `GET /admin/stats`: numbers for the dashboard home page (waiting inquiries, and
+  today's conversations, handoffs and inquiries, "today" being the Africa/Casablanca
+  day), plus the number of documents.
+- `GET /admin/documents`: the knowledge-base documents with their chunk counts, most
+  recently added or updated first.
+- `DELETE /admin/documents/{id}`: deletes a document and its chunks (204, or 404).
+  The file in `data/processed` is kept.
+
+Anyone who can reach the server can read these numbers and add or delete documents in
+the bot's knowledge base. Until authentication exists, run the API on the loopback
+address only:
 
 ```
 uvicorn app.main:app --host 127.0.0.1 --port 8000
