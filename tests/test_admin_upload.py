@@ -26,12 +26,19 @@ V2 = [["Wireless Headphones X1", "Price: 459 MAD", "Stock: 3"]]
 
 @pytest.fixture
 def inbox(tmp_path, monkeypatch, db, test_db):
-    """Empty test DB, the app pointed at it, and an empty inbox under tmp_path/root."""
+    """Empty test DB, the app pointed at it, and an empty inbox under tmp_path/root.
+    data/processed (the processed fixture) is left for the upload to create."""
     monkeypatch.setenv("DATABASE_NAME", test_db)
     folder = tmp_path / "root" / "data" / "inbox"
     folder.mkdir(parents=True)
     monkeypatch.setattr(upload, "INBOX", folder)
+    monkeypatch.setattr(upload, "PROCESSED", folder.parent / "processed")
     return folder
+
+
+@pytest.fixture
+def processed(inbox):
+    return inbox.parent / "processed"
 
 
 @pytest.fixture
@@ -50,7 +57,7 @@ def post(name, data, content_type="application/pdf"):
 
 
 def files_under(folder: Path) -> list[str]:
-    """Every file below folder (staging included), as relative posix paths."""
+    """Every file below folder (staging included), as relative posix paths; [] if missing."""
     return sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file())
 
 
@@ -69,14 +76,14 @@ def chunk_ids(conn, source_name):
 
 
 def assert_nothing_written(inbox, db2):
-    assert files_under(inbox) == []
+    assert files_under(inbox.parent) == []  # neither data/inbox nor data/processed
     assert documents(db2) == []
     assert db2.execute("SELECT count(*) FROM document_chunks").fetchone()[0] == 0
 
 
 # ---------------------------------------------------------------- success, replace, skip
 
-def test_upload_creates_document_and_keeps_file_in_inbox(inbox, db2, pdf):
+def test_upload_creates_document_and_moves_file_to_processed(inbox, processed, db2, pdf):
     data = pdf(V1)
 
     response = post("Headphones.pdf", data)
@@ -86,14 +93,15 @@ def test_upload_creates_document_and_keeps_file_in_inbox(inbox, db2, pdf):
     assert body["filename"] == "Headphones.pdf"
     assert body["status"] == "created"
     assert body["chunks"] == len(chunk_ids(db2, "headphones")) > 0
-    assert files_under(inbox) == ["Headphones.pdf"]  # no staging leftovers
-    assert (inbox / "Headphones.pdf").read_bytes() == data
+    assert files_under(inbox) == []  # moved out, and no staging leftovers
+    assert files_under(processed) == ["Headphones.pdf"]
+    assert (processed / "Headphones.pdf").read_bytes() == data
     [(source_name, title, content)] = documents(db2)
     assert (source_name, title) == ("headphones", "Headphones")
     assert "Price: 499 MAD" in content
 
 
-def test_same_name_replaces_the_older_document(inbox, db2, pdf):
+def test_same_name_replaces_the_older_document(inbox, processed, db2, pdf):
     post("headphones.pdf", pdf(V1))
     old_chunks = chunk_ids(db2, "headphones")
     new = pdf(V2)
@@ -108,10 +116,25 @@ def test_same_name_replaces_the_older_document(inbox, db2, pdf):
     new_chunks = chunk_ids(db2, "headphones")
     assert response.json()["chunks"] == len(new_chunks)
     assert set(new_chunks).isdisjoint(old_chunks)
-    assert (inbox / "Headphones.pdf").read_bytes() == new
+    # Name differs in case only: on a case-insensitive disk (Windows) this is the same file.
+    assert (processed / "Headphones.pdf").read_bytes() == new
 
 
-def test_identical_upload_is_skipped(inbox, db2, pdf):
+def test_second_upload_of_same_name_replaces_the_processed_file(inbox, processed, db2, pdf):
+    old, new = pdf(V1), pdf(V2)
+    assert post("guide.pdf", old).json()["status"] == "created"
+    assert (processed / "guide.pdf").read_bytes() == old
+
+    response = post("guide.pdf", new)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "updated"
+    assert files_under(processed) == ["guide.pdf"]
+    assert (processed / "guide.pdf").read_bytes() == new
+    assert files_under(inbox) == []
+
+
+def test_identical_upload_is_skipped(inbox, processed, db2, pdf):
     data = pdf(V1)
     first = post("headphones.pdf", data).json()
     before = chunk_ids(db2, "headphones")
@@ -121,7 +144,9 @@ def test_identical_upload_is_skipped(inbox, db2, pdf):
     assert response.status_code == 200
     assert response.json() == {"filename": "headphones.pdf", "status": "skipped", "chunks": first["chunks"]}
     assert chunk_ids(db2, "headphones") == before
-    assert files_under(inbox) == ["headphones.pdf"]
+    # Skipped is a success: the file is moved like the others.
+    assert files_under(inbox) == []
+    assert files_under(processed) == ["headphones.pdf"]
 
 
 # ---------------------------------------------------------------- limit 1: only PDF
@@ -277,14 +302,14 @@ def test_unusable_names_are_rejected(raw, status):
 @pytest.mark.parametrize(
     "hostile", ["../../evil.pdf", "..\\..\\evil.pdf", "/tmp/evil.pdf", "C:\\evil.pdf", "../data/../evil.pdf"]
 )
-def test_path_traversal_name_stays_inside_the_inbox(inbox, db2, pdf, hostile):
+def test_path_traversal_name_stays_inside_the_data_folders(inbox, db2, pdf, hostile):
     root = inbox.parents[1]  # tmp_path/root: inbox is root/data/inbox
 
     response = post(hostile, pdf(V1))
 
     assert response.status_code == 200
     assert response.json()["filename"] == "evil.pdf"
-    assert files_under(root) == ["data/inbox/evil.pdf"]
+    assert files_under(root) == ["data/processed/evil.pdf"]
     assert [d[0] for d in documents(db2)] == ["evil"]
 
 
@@ -346,7 +371,7 @@ def test_database_down_is_a_json_503_and_cleans_inbox(inbox, db2, pdf, monkeypat
     assert_nothing_written(inbox, db2)
 
 
-def test_failed_replacement_keeps_the_previous_document_and_file(inbox, db2, pdf):
+def test_failed_replacement_keeps_the_previous_document_and_file(inbox, processed, db2, pdf):
     good = pdf(V1)
     post("guide.pdf", good)
     before = documents(db2), chunk_ids(db2, "guide")
@@ -355,13 +380,14 @@ def test_failed_replacement_keeps_the_previous_document_and_file(inbox, db2, pdf
 
     assert response.status_code == 422
     assert (documents(db2), chunk_ids(db2, "guide")) == before
-    assert files_under(inbox) == ["guide.pdf"]
-    assert (inbox / "guide.pdf").read_bytes() == good
+    assert files_under(inbox) == []
+    assert files_under(processed) == ["guide.pdf"]
+    assert (processed / "guide.pdf").read_bytes() == good
 
 
 # ---------------------------------------------------------------- same name at the same time
 
-def test_concurrent_uploads_of_one_name_are_serialised(inbox, db2, pdf):
+def test_concurrent_uploads_of_one_name_are_serialised(inbox, processed, db2, pdf):
     contents = [pdf(V1), pdf(V2)]
     barrier = threading.Barrier(2)
     results, errors = [], []
@@ -381,9 +407,10 @@ def test_concurrent_uploads_of_one_name_are_serialised(inbox, db2, pdf):
 
     assert errors == []
     assert sorted(r.status for r in results) == ["created", "updated"]
-    # The inbox file is the one whose text is in the database (the last one to commit).
+    # The processed file is the one whose text is in the database (the last to commit).
     [(_, _, content)] = documents(db2)
-    on_disk = (inbox / "guide.pdf").read_bytes()
+    on_disk = (processed / "guide.pdf").read_bytes()
     assert on_disk in contents
     assert ("459" in content) == (on_disk == contents[1])
-    assert files_under(inbox) == ["guide.pdf"]
+    assert files_under(processed) == ["guide.pdf"]
+    assert files_under(inbox) == []

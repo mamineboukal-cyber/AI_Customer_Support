@@ -7,7 +7,7 @@ RAG customer-support bot for MoroccoTech (Postgres + pgvector retrieval, Gemini 
 ## Admin routes (`/admin/...`): no authentication yet
 
 The admin routes, such as `POST /admin/upload` (one PDF of up to 10 MB, saved in
-`data/inbox` and ingested), have **no login yet**. Anyone who can reach the server can
+`data/inbox`, ingested, then moved to `data/processed`), have **no login yet**. Anyone who can reach the server can
 upload documents into the bot's knowledge base. Until authentication exists, run the
 API on the loopback address only:
 

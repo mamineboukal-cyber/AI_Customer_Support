@@ -55,7 +55,7 @@ router = APIRouter()
 
 # Plain def: ingestion blocks (embedding, database), so FastAPI runs it in a worker thread.
 def upload(file: UploadFile | None = File(None, description="one PDF, at most 10 MB")):
-    """Save one PDF in data/inbox and ingest it. Same file name = same document."""
+    """Save one PDF in data/inbox, ingest it, move it to data/processed. Same file name = same document."""
     if file is None:
         return _error(400, NO_FILE)
     try:

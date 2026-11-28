@@ -1,15 +1,17 @@
-"""Save ONE uploaded PDF in data/inbox and ingest it with ingest_file (same rules as the
-folder ingestion: one transaction, name stem = document, same name replaces, same text skips).
+"""Save ONE uploaded PDF in data/inbox, ingest it with ingest_file (same rules as the
+folder ingestion: one transaction, name stem = document, same name replaces, same text
+skips), then move it to data/processed like ingest_folder does.
 
 The upload is first written to a private staging folder inside the inbox
 (data/inbox/.staging/<random>/<name>): ingest_folder ignores hidden entries and does not
 walk sub-folders, so a half-written or rejected file is never seen as an inbox file.
-Only after the transaction has committed is it moved to data/inbox/<name>. On any
-failure the staging folder is deleted and the database is untouched (rolled back).
+Only after the transaction has committed (created, updated or skipped) is it moved to
+data/processed/<name>, replacing a processed file of the same name. On any failure
+the staging folder is deleted and the database is untouched (rolled back).
 
 Uploads of the same document are serialised with a Postgres advisory lock held from
-before the ingestion until the file is in the inbox, so the second one waits and then
-reports "updated" or "skipped", and the inbox file always matches the database.
+before the ingestion until the file is in data/processed, so the second one waits and
+then reports "updated" or "skipped", and the processed file always matches the database.
 """
 import os
 import re
@@ -24,6 +26,7 @@ from app.ingestion.ingest import connect, ingest_file
 from app.ingestion.loaders import EmptyDocument, UnreadablePdf
 
 INBOX = Path(__file__).resolve().parents[2] / "data" / "inbox"
+PROCESSED = Path(__file__).resolve().parents[2] / "data" / "processed"
 STAGING_DIR = ".staging"
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MiB, the PDF itself
@@ -100,24 +103,28 @@ def _chunk_count(conn, source_name: str) -> int:
     ).fetchone()[0]
 
 
-def save_and_ingest(src: BinaryIO, raw_name: str | None, inbox: Path | None = None) -> UploadResult:
+def save_and_ingest(
+    src: BinaryIO, raw_name: str | None, inbox: Path | None = None, processed: Path | None = None
+) -> UploadResult:
     inbox = inbox or INBOX
+    processed = processed or PROCESSED
     name = safe_pdf_name(raw_name)
 
     if src.read(len(PDF_MAGIC)) != PDF_MAGIC:
         raise UploadError(415, "not a PDF file: the content does not start with %PDF-")
     src.seek(0)
 
-    final = inbox / name
+    final = processed / name
     staging = inbox / STAGING_DIR / uuid.uuid4().hex
     staged = staging / name
 
     staging.mkdir(parents=True)
     try:
+        processed.mkdir(parents=True, exist_ok=True)
         # Belt and braces after safe_pdf_name. Checked once both folders exist: on
         # Windows, resolve() of a missing path can differ from the same path resolved
         # a moment later, after another upload has created .staging.
-        if not (_inside(inbox, final) and _inside(staging, staged)):
+        if not (_inside(processed, final) and _inside(staging, staged)):
             raise UploadError(400, "invalid file name")
         _copy_limited(src, staged)
         try:
@@ -136,12 +143,13 @@ def save_and_ingest(src: BinaryIO, raw_name: str | None, inbox: Path | None = No
             except Exception as e:
                 raise UploadError(500, f"ingestion failed: {type(e).__name__}: {e}") from None
             try:
+                # Same as ingest_folder: replaces a processed file of the same name.
                 os.replace(staged, final)
             except OSError as e:
                 raise UploadError(
                     500,
                     f"the document was ingested ({status}) but the file could not be saved "
-                    f"in the inbox: {type(e).__name__}: {e}",
+                    f"in data/processed: {type(e).__name__}: {e}",
                 ) from None
             chunks = _chunk_count(conn, source_name)
             conn.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 0))", (source_name,))
