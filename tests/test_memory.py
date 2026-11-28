@@ -21,7 +21,7 @@ def messages(conn, conversation_id):
 def save_turns(conversation_id, n):
     for i in range(1, n + 1):
         save_message(conversation_id, "user", f"q{i}")
-        save_message(conversation_id, "assistant", f"r{i}")
+        save_message(conversation_id, "assistant", f"r{i}", "normal")
 
 
 # (1) get_or_create_conversation

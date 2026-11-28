@@ -15,6 +15,7 @@ TABLES = {
     "documents",
     "document_chunks",
     "unanswered_questions",
+    "visitors",
 }
 
 
@@ -270,7 +271,7 @@ def test_0005_up_down_up_from_empty(db, migrate):
     migrate(command.downgrade, "base")
     assert _tables(db) == {"alembic_version"}
 
-    migrate(command.upgrade, "head")
+    migrate(command.upgrade, "0005_admin_inquiries")
     assert _has_0005(db) == (True, True, True)
     assert _version(db) == ("0005_admin_inquiries",)
 
@@ -279,6 +280,132 @@ def test_0005_up_down_up_from_empty(db, migrate):
     assert {"conversations", "unanswered_questions"} <= _tables(db)
     assert _version(db) == ("0004_source_name_stem",)
 
-    migrate(command.upgrade, "head")
+    migrate(command.upgrade, "0005_admin_inquiries")
     assert _has_0005(db) == (True, True, True)
     assert _version(db) == ("0005_admin_inquiries",)
+
+
+# --- 0006: visitors, conversations.visitor_id, messages.reply_kind ------------------
+
+# The texts migration 0006 backfills from, frozen there on purpose: when the app's
+# messages are reworded later, the migration (and so this test) must not change.
+HANDOFF_0006 = "I don't know. Let me connect you to a human agent."
+ERROR_0006 = "Sorry, we are having a technical problem. Let me connect you to a human agent."
+
+
+def _message(conn, conversation_id, role, content, kind=None):
+    return conn.execute(
+        "INSERT INTO messages (conversation_id, role, content, reply_kind) "
+        "VALUES (%s, %s, %s, %s) RETURNING id",
+        (conversation_id, role, content, kind),
+    ).fetchone()[0]
+
+
+def test_visitor_defaults(conn):
+    visitor_id, created_at = conn.execute(
+        "INSERT INTO visitors DEFAULT VALUES RETURNING id, created_at"
+    ).fetchone()
+    assert visitor_id is not None and created_at is not None
+
+
+def test_conversation_visitor_is_optional_and_set_null_on_delete(conn):
+    assert _column(conn, "conversations", "visitor_id") == ("uuid", "YES")
+    assert "(visitor_id)" in _index_def(conn, "idx_conversations_visitor_id")
+    visitor = conn.execute("INSERT INTO visitors DEFAULT VALUES RETURNING id").fetchone()[0]
+    linked = conn.execute(
+        "INSERT INTO conversations (visitor_id) VALUES (%s) RETURNING id", (visitor,)
+    ).fetchone()[0]
+    _conversation(conn)  # no visitor: allowed
+
+    conn.execute("DELETE FROM visitors WHERE id = %s", (visitor,))
+
+    assert conn.execute(
+        "SELECT visitor_id FROM conversations WHERE id = %s", (linked,)
+    ).fetchone() == (None,)
+
+
+def test_conversation_visitor_must_exist(conn):
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        conn.execute(
+            "INSERT INTO conversations (visitor_id) VALUES (gen_random_uuid())"
+        )
+
+
+@pytest.mark.parametrize("kind", ["normal", "inquiry", "handoff", "error"])
+def test_assistant_message_accepts_each_reply_kind(conn, kind):
+    _message(conn, _conversation(conn), "assistant", "x", kind)
+
+
+@pytest.mark.parametrize(
+    "role, kind, constraint",
+    [
+        ("assistant", None, "messages_reply_kind_role_check"),
+        ("user", "normal", "messages_reply_kind_role_check"),
+        ("system", "handoff", "messages_reply_kind_role_check"),
+        ("assistant", "unknown", "messages_reply_kind_check"),
+        ("assistant", "Normal", "messages_reply_kind_check"),
+    ],
+)
+def test_reply_kind_rejects(conn, role, kind, constraint):
+    conversation_id = _conversation(conn)
+    with pytest.raises(psycopg.errors.CheckViolation) as e:
+        _message(conn, conversation_id, role, "x", kind)
+    assert e.value.diag.constraint_name == constraint
+
+
+def _has_0006(conn):
+    return (
+        "visitors" in _tables(conn),
+        _column(conn, "conversations", "visitor_id") is not None,
+        _column(conn, "messages", "reply_kind") is not None,
+    )
+
+
+def test_0006_backfills_existing_rows_and_goes_down_and_up(db, migrate):
+    db.execute(
+        "TRUNCATE visitors, conversations, messages, admin_inquiries, unanswered_questions "
+        "RESTART IDENTITY"
+    )
+    migrate(command.downgrade, "0005_admin_inquiries")
+    assert _has_0006(db) == (False, False, False)
+    # Rows as the app wrote them before 0006 (no reply_kind column yet).
+    conversation_id = _conversation(db)
+    for role, content in [
+        ("user", "Is the K1 in stock?"),
+        ("assistant", "Yes, 8 in stock."),
+        ("user", "i love you"),
+        ("assistant", HANDOFF_0006),
+        ("user", "price?"),
+        ("assistant", ERROR_0006),
+        ("assistant", "We will check and come back to you."),
+        ("system", HANDOFF_0006),
+    ]:
+        db.execute(
+            "INSERT INTO messages (conversation_id, role, content) VALUES (%s, %s, %s)",
+            (conversation_id, role, content),
+        )
+
+    migrate(command.upgrade, "0006_visitors_reply_kind")
+
+    assert _has_0006(db) == (True, True, True)
+    assert db.execute("SELECT role, reply_kind FROM messages ORDER BY id").fetchall() == [
+        ("user", None),
+        ("assistant", "normal"),
+        ("user", None),
+        ("assistant", "handoff"),
+        ("user", None),
+        ("assistant", "error"),
+        ("assistant", "normal"),  # a past inquiry promise cannot be recognised
+        ("system", None),
+    ]
+    assert db.execute("SELECT visitor_id FROM conversations").fetchall() == [(None,)]
+
+    migrate(command.downgrade, "0005_admin_inquiries")
+    assert _has_0006(db) == (False, False, False)
+    assert _version(db) == ("0005_admin_inquiries",)
+    assert db.execute("SELECT count(*) FROM messages").fetchone() == (8,)  # rows kept
+
+    migrate(command.upgrade, "0006_visitors_reply_kind")
+    assert _has_0006(db) == (True, True, True)
+    assert _version(db) == ("0006_visitors_reply_kind",)
+    db.execute("TRUNCATE visitors, conversations, messages RESTART IDENTITY CASCADE")
